@@ -12,8 +12,7 @@ import {
   Zap,
   Search,
   Map,
-  ShieldAlert,
-  MessageSquare,
+    MessageSquare,
   Quote,
   FileCode,             
   Layers,
@@ -22,13 +21,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import ThemeToggle from "@/components/ThemeToggle";
 import { api } from "@/services/api";
 import { useGraphStore } from "@/store/useGraphStore";
 import { toast } from "sonner";
 
 const FEATURES = [
   { icon: Network, title: "Architecture graph", desc: "See how every file connects in one interactive map." },
-  { icon: Sparkles, title: "AI summaries", desc: "Plain-English explanations of every module and risk hotspot." },
+  { icon: Sparkles, title: "AI summaries", desc: "Plain-English explanations of every module and code intent." },
   { icon: Workflow, title: "Guided onboarding", desc: "A curated reading order to ramp up on any codebase fast." },
   { icon: GitBranch, title: "Natural-language queries", desc: "Ask “Where is auth?” and watch the graph light up." },
 ];
@@ -42,12 +42,12 @@ const STEPS = [
   {
     icon: Brain,
     title: "2. AI maps the architecture",
-    desc: "We analyze imports, call graphs, and ownership signals to identify entry points, core logic, and hotspots.",
+    desc: "We analyze imports, call graphs, and ownership signals to identify entry points and core logic fast.",
   },
   {
     icon: Eye,
     title: "3. Explore visually",
-    desc: "Interactive graph, file tree, summaries, and risk indicators — all in one developer-focused dashboard.",
+    desc: "Interactive graph, file tree, and summaries in one developer-focused dashboard.",
   },
   {
     icon: MessageSquare,
@@ -63,9 +63,9 @@ const DEEP_FEATURES = [
     desc: "Dagre-powered hierarchical layouts keep even sprawling monorepos legible.",
   },
   {
-    icon: ShieldAlert,
-    title: "Risk hotspots",
-    desc: "High-impact files glow red so you know what not to break on day one.",
+    icon: GitBranch,
+    title: "Dependency signals",
+    desc: "Trace high-impact files through incoming and outgoing links in seconds.",
   },
   {
     icon: Search,
@@ -206,6 +206,7 @@ const Landing = () => {
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            <ThemeToggle className="h-8 gap-1.5 border-border bg-secondary/40 px-2 text-xs" />
             <a
               href="https://github.com"
               target="_blank"
@@ -565,3 +566,6 @@ const Landing = () => {
 };
 
 export default Landing;
+
+
+

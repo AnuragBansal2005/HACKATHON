@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Line, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { Gauge } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useGraphStore } from "@/store/useGraphStore";
 import type { RepoNode, RepoEdge } from "@/types/graph";
 
@@ -17,43 +18,43 @@ interface QualityConfig {
   showFog: boolean;
   dpr: [number, number];
   rotateNodes: boolean;
-  pixelRatio: number;
+}
+
+interface HeatInfo {
+  score: number;
+  normalized: number;
 }
 
 const QUALITY: Record<Quality, QualityConfig> = {
   low: {
     segments: 10,
-    edgeOpacityBase: 0.25,
+    edgeOpacityBase: 0.35,
     showHalo: false,
     showStars: false,
     showFog: false,
     dpr: [1, 1],
     rotateNodes: false,
-    pixelRatio: 1,
   },
   medium: {
     segments: 16,
-    edgeOpacityBase: 0.3,
+    edgeOpacityBase: 0.42,
     showHalo: true,
     showStars: false,
     showFog: true,
     dpr: [1, 1.5],
     rotateNodes: false,
-    pixelRatio: 1.25,
   },
   high: {
     segments: 28,
-    edgeOpacityBase: 0.35,
+    edgeOpacityBase: 0.5,
     showHalo: true,
     showStars: true,
     showFog: true,
     dpr: [1, 2],
     rotateNodes: true,
-    pixelRatio: 2,
   },
 };
 
-// ---------- Force-directed 3D layout (deterministic, runs once per graph) ----------
 function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec3> {
   const positions: Record<string, THREE.Vector3> = {};
   const rng = mulberry32(42);
@@ -66,7 +67,6 @@ function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec
   });
 
   const k = 4;
-  // Lower iteration count for larger graphs to keep init snappy
   const iterations = nodes.length > 80 ? 140 : 200;
   for (let i = 0; i < iterations; i++) {
     const disp: Record<string, THREE.Vector3> = {};
@@ -135,7 +135,16 @@ function nodeColor(n: RepoNode) {
   return CATEGORY_COLOR[n.category] ?? CATEGORY_COLOR.core;
 }
 
-// ---------- Node sphere ----------
+function heatColor(normalized: number) {
+  const hue = (1 - normalized) * 0.33;
+  return new THREE.Color().setHSL(hue, 0.78, 0.52).getStyle();
+}
+
+function normalizeScore(score: number, max: number) {
+  if (max <= 0) return 0;
+  return Math.min(score / max, 1);
+}
+
 interface NodeMeshProps {
   node: RepoNode;
   position: Vec3;
@@ -144,6 +153,7 @@ interface NodeMeshProps {
   isFocused: boolean;
   isDimmed: boolean;
   isHighlighted: boolean;
+  heat: HeatInfo;
   quality: QualityConfig;
   onClick: () => void;
   onPointerOver: () => void;
@@ -158,6 +168,7 @@ const NodeMesh = ({
   isFocused,
   isDimmed,
   isHighlighted,
+  heat,
   quality,
   onClick,
   onPointerOver,
@@ -165,24 +176,42 @@ const NodeMesh = ({
 }: NodeMeshProps) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const haloRef = useRef<THREE.Mesh>(null);
+  const borderRef = useRef<THREE.LineSegments>(null);
+  const scaleVector = useRef(new THREE.Vector3());
+  const haloScaleVector = useRef(new THREE.Vector3());
+  const borderScaleVector = useRef(new THREE.Vector3());
   const baseSize = 0.35 + Math.min(node.loc / 800, 1.2);
   const color = nodeColor(node);
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
     const target = isHovered || isSelected ? baseSize * 1.35 : baseSize;
-    meshRef.current.scale.lerp(new THREE.Vector3(target, target, target), 0.15);
+    scaleVector.current.set(target, target, target);
+    meshRef.current.scale.lerp(scaleVector.current, 0.15);
+
+    if (borderRef.current) {
+      const borderTarget = target * 1.08;
+      borderScaleVector.current.set(borderTarget, borderTarget, borderTarget);
+      borderRef.current.scale.lerp(borderScaleVector.current, 0.18);
+      const borderMat = borderRef.current.material as THREE.LineBasicMaterial;
+      const baseOpacity = 0.2 + heat.normalized * 0.45;
+      const activeBoost = isSelected || isHovered ? 0.15 : 0;
+      borderMat.opacity = THREE.MathUtils.lerp(borderMat.opacity, baseOpacity + activeBoost, 0.15);
+    }
+
     if (haloRef.current) {
       const showHalo = isSelected || isHighlighted || isFocused;
       const haloTarget = showHalo ? baseSize * 1.9 : baseSize * 1.05;
-      haloRef.current.scale.lerp(new THREE.Vector3(haloTarget, haloTarget, haloTarget), 0.12);
+      haloScaleVector.current.set(haloTarget, haloTarget, haloTarget);
+      haloRef.current.scale.lerp(haloScaleVector.current, 0.12);
       const mat = haloRef.current.material as THREE.MeshBasicMaterial;
       mat.opacity = THREE.MathUtils.lerp(mat.opacity, showHalo ? 0.25 : 0, 0.12);
     }
+
     if (quality.rotateNodes) meshRef.current.rotation.y += delta * 0.2;
   });
 
-  const opacity = isDimmed ? 0.18 : 1;
+  const opacity = isDimmed ? 0.22 : 1;
 
   return (
     <group position={position}>
@@ -192,6 +221,17 @@ const NodeMesh = ({
           <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} />
         </mesh>
       )}
+
+      <lineSegments ref={borderRef}>
+        <edgesGeometry args={[new THREE.SphereGeometry(1, Math.max(quality.segments, 12), Math.max(quality.segments, 12))]} />
+        <lineBasicMaterial
+          color={heatColor(heat.normalized)}
+          transparent
+          opacity={0.12}
+          depthWrite={false}
+        />
+      </lineSegments>
+
       <mesh
         ref={meshRef}
         onClick={(e) => {
@@ -219,6 +259,7 @@ const NodeMesh = ({
           opacity={opacity}
         />
       </mesh>
+
       {(isHovered || isSelected) && (
         <Html
           distanceFactor={10}
@@ -235,7 +276,6 @@ const NodeMesh = ({
   );
 };
 
-// ---------- Edge ----------
 interface EdgeLineProps {
   from: Vec3;
   to: Vec3;
@@ -245,59 +285,32 @@ interface EdgeLineProps {
 }
 
 const EdgeLine = ({ from, to, active, dimmed, baseOpacity }: EdgeLineProps) => {
+  const start = useMemo(() => new THREE.Vector3(...from), [from]);
+  const end = useMemo(() => new THREE.Vector3(...to), [to]);
   const points = useMemo<Vec3[]>(() => [from, to], [from, to]);
-  const color = active ? "#67e8f9" : "#64748b";
-  const opacity = dimmed ? 0.05 : active ? 0.9 : baseOpacity;
+  const direction = useMemo(() => end.clone().sub(start), [end, start]);
+  const dirNorm = useMemo(() => direction.clone().normalize(), [direction]);
+  const arrowPos = useMemo(() => end.clone().addScaledVector(dirNorm, -0.5), [dirNorm, end]);
+  const arrowQuat = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirNorm),
+    [dirNorm],
+  );
+
+  const color = active ? "#22d3ee" : "#93a4b8";
+  const opacity = dimmed ? 0.09 : active ? 0.95 : baseOpacity;
+
   return (
-    <Line
-      points={points}
-      color={color}
-      lineWidth={active ? 2 : 1}
-      transparent
-      opacity={opacity}
-    />
+    <>
+      <Line points={points} color={color} lineWidth={active ? 2.6 : 2} transparent opacity={opacity} />
+      <mesh position={arrowPos} quaternion={arrowQuat}>
+        <coneGeometry args={[0.12, 0.36, 12]} />
+        <meshBasicMaterial color={color} transparent opacity={Math.min(opacity + 0.1, 1)} />
+      </mesh>
+    </>
   );
 };
 
-// ---------- Camera focus + keyboard shortcuts ----------
-const CameraController = ({ target }: { target: Vec3 | null }) => {
-  const { camera } = useThree();
-  const desired = useRef(new THREE.Vector3());
-  const zoomCommand = useRef<0 | 1 | -1 | "fit">(0);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "+" || e.key === "=") zoomCommand.current = -1;
-      else if (e.key === "-" || e.key === "_") zoomCommand.current = 1;
-      else if (e.key === "0") zoomCommand.current = "fit";
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useFrame(() => {
-    if (zoomCommand.current === "fit") {
-      camera.position.lerp(new THREE.Vector3(18, 14, 18), 0.2);
-      camera.lookAt(0, 0, 0);
-      zoomCommand.current = 0;
-    } else if (zoomCommand.current !== 0) {
-      const dir = camera.position.clone().normalize();
-      camera.position.addScaledVector(dir, zoomCommand.current * 1.5);
-      zoomCommand.current = 0;
-    }
-    if (target) {
-      desired.current.set(target[0] + 6, target[1] + 4, target[2] + 6);
-      camera.position.lerp(desired.current, 0.05);
-      camera.lookAt(new THREE.Vector3(...target));
-    }
-  });
-  return null;
-};
-
-// ---------- Scene ----------
-const Scene = ({ quality }: { quality: QualityConfig }) => {
+const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: boolean }) => {
   const graph = useGraphStore((s) => s.graph);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
@@ -305,12 +318,31 @@ const Scene = ({ quality }: { quality: QualityConfig }) => {
   const selectNode = useGraphStore((s) => s.selectNode);
   const hoverNode = useGraphStore((s) => s.hoverNode);
 
+  const controlsRef = useRef<any>(null);
+  const zoomPulse = useRef(0);
+  const centerPulse = useRef(0);
+  const lastSelectedNodeId = useRef<string | null>(null);
+  const centerTarget = useRef(new THREE.Vector3());
+  const cameraDirectionScratch = useRef(new THREE.Vector3());
+
   const layout = useMemo(() => {
     if (!graph) return {} as Record<string, Vec3>;
     return computeLayout(graph.nodes, graph.edges);
   }, [graph]);
 
-  const focusId = hoveredNodeId ?? selectedNodeId;
+  useEffect(() => {
+    if (!selectedNodeId || selectedNodeId === lastSelectedNodeId.current) return;
+    lastSelectedNodeId.current = selectedNodeId;
+    zoomPulse.current = 1;
+    const selectedPosition = layout[selectedNodeId];
+    if (selectedPosition) {
+      centerTarget.current.set(selectedPosition[0], selectedPosition[1], selectedPosition[2]);
+      centerPulse.current = 1;
+    }
+  }, [selectedNodeId]);
+
+  const focusId = selectedNodeId;
+
   const connectedIds = useMemo(() => {
     if (!focusId || !graph) return null;
     const set = new Set<string>([focusId]);
@@ -321,30 +353,103 @@ const Scene = ({ quality }: { quality: QualityConfig }) => {
     return set;
   }, [focusId, graph]);
 
-  const focusPos = focusId ? layout[focusId] ?? null : null;
+  const heatmap = useMemo(() => {
+    if (!graph) return {} as Record<string, HeatInfo>;
+
+    const outgoing = new Map<string, number>();
+    const dependents = new Map<string, number>();
+
+    graph.nodes.forEach((node) => {
+      outgoing.set(node.id, 0);
+      dependents.set(node.id, 0);
+    });
+
+    graph.edges.forEach((edge) => {
+      outgoing.set(edge.source, (outgoing.get(edge.source) ?? 0) + 1);
+      dependents.set(edge.target, (dependents.get(edge.target) ?? 0) + 1);
+    });
+
+    let maxScore = 0;
+    const rawScores = new Map<string, number>();
+
+    graph.nodes.forEach((node) => {
+      const score = (outgoing.get(node.id) ?? 0) + (dependents.get(node.id) ?? 0);
+      rawScores.set(node.id, score);
+      maxScore = Math.max(maxScore, score);
+    });
+
+    const map: Record<string, HeatInfo> = {};
+    graph.nodes.forEach((node) => {
+      const score = rawScores.get(node.id) ?? 0;
+      map[node.id] = {
+        score,
+        normalized: normalizeScore(score, maxScore),
+      };
+    });
+
+    return map;
+  }, [graph]);
 
   if (!graph) return null;
 
+  useFrame(() => {
+    if (!controlsRef.current) return;
+
+    const controls = controlsRef.current;
+    const target = controls.target as THREE.Vector3;
+
+    if (centerPulse.current > 0) {
+      target.lerp(centerTarget.current, 0.14);
+      controls.update();
+      centerPulse.current = Math.max(0, centerPulse.current - 0.1);
+    }
+
+    if (zoomPulse.current <= 0) return;
+
+    const direction = cameraDirectionScratch.current.copy(controls.object.position).sub(target);
+    const desiredPosition = target.clone().add(direction.multiplyScalar(0.9));
+
+    controls.object.position.lerp(desiredPosition, 0.12);
+    controls.update();
+
+    zoomPulse.current = Math.max(0, zoomPulse.current - 0.08);
+  });
+
+  const bg = isLightMode ? "#d9efff" : "#070a13";
+
   return (
     <>
-      <color attach="background" args={["#070a13"]} />
-      {quality.showFog && <fog attach="fog" args={["#070a13", 25, 70]} />}
-      <ambientLight intensity={0.45} />
-      <pointLight position={[15, 15, 15]} intensity={1.1} color="#7dd3fc" />
-      <pointLight position={[-15, -10, -10]} intensity={0.8} color="#a78bfa" />
+      <color attach="background" args={[bg]} />
+      {quality.showFog && <fog attach="fog" args={[bg, 25, 70]} />}
+
+      <ambientLight intensity={isLightMode ? 0.72 : 0.45} />
+      <pointLight position={[15, 15, 15]} intensity={isLightMode ? 0.85 : 1.1} color="#7dd3fc" />
+      <pointLight position={[-15, -10, -10]} intensity={isLightMode ? 0.6 : 0.8} color="#a78bfa" />
+
       {quality.showStars && (
-        <Stars radius={80} depth={40} count={1200} factor={3} saturation={0} fade speed={0.6} />
+        <Stars
+          radius={isLightMode ? 95 : 80}
+          depth={isLightMode ? 55 : 40}
+          count={isLightMode ? 1800 : 1200}
+          factor={isLightMode ? 3.5 : 3}
+          saturation={isLightMode ? 0 : 0}
+          fade
+          speed={isLightMode ? 0.35 : 0.6}
+        />
       )}
 
       {graph.edges.map((e) => {
         const from = layout[e.source];
         const to = layout[e.target];
         if (!from || !to) return null;
+
         const onFocus = !!focusId && (e.source === focusId || e.target === focusId);
         const onHighlight =
           highlightedNodeIds.includes(e.source) && highlightedNodeIds.includes(e.target);
+
         const active = onFocus || onHighlight;
         const dimmed = !!connectedIds && !onFocus && !onHighlight;
+
         return (
           <EdgeLine
             key={e.id}
@@ -360,11 +465,13 @@ const Scene = ({ quality }: { quality: QualityConfig }) => {
       {graph.nodes.map((n) => {
         const pos = layout[n.id];
         if (!pos) return null;
+
         const isSelected = n.id === selectedNodeId;
         const isHovered = n.id === hoveredNodeId;
         const isHighlighted = highlightedNodeIds.includes(n.id);
         const isDimmed = connectedIds ? !connectedIds.has(n.id) : false;
         const isFocused = !!focusId && connectedIds?.has(n.id) === true;
+
         return (
           <NodeMesh
             key={n.id}
@@ -375,6 +482,7 @@ const Scene = ({ quality }: { quality: QualityConfig }) => {
             isFocused={isFocused}
             isDimmed={isDimmed}
             isHighlighted={isHighlighted}
+            heat={heatmap[n.id] ?? { score: 0, normalized: 0 }}
             quality={quality}
             onClick={() => selectNode(n.id)}
             onPointerOver={() => hoverNode(n.id)}
@@ -383,14 +491,14 @@ const Scene = ({ quality }: { quality: QualityConfig }) => {
         );
       })}
 
-      <CameraController target={focusPos} />
       <OrbitControls
+        ref={controlsRef}
         enableDamping
         dampingFactor={0.08}
         rotateSpeed={0.7}
-        zoomSpeed={0.9}
+        zoomSpeed={2.2}
         minDistance={5}
-        maxDistance={60}
+        maxDistance={90}
       />
     </>
   );
@@ -423,7 +531,21 @@ const QualityToggle = ({
 
 const Hint = () => (
   <div className="absolute bottom-4 right-4 z-10 glass rounded-lg px-3 py-2 text-[11px] text-muted-foreground pointer-events-none">
-    Drag to rotate · Scroll to zoom · <kbd className="font-mono">+</kbd>/<kbd className="font-mono">-</kbd> zoom · <kbd className="font-mono">0</kbd> reset
+    Drag to rotate and pan · Scroll to zoom
+  </div>
+);
+
+const HeatmapLegend = () => (
+  <div className="absolute bottom-4 left-4 z-10 glass rounded-lg px-3 py-2 text-[11px]">
+    <div className="mb-1 font-semibold uppercase tracking-wider text-muted-foreground">Risk Heatmap</div>
+    <div className="h-2.5 w-44 rounded-full bg-[linear-gradient(90deg,#22c55e_0%,#eab308_55%,#ef4444_100%)]" />
+    <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+      <span>Low</span>
+      <span>High</span>
+    </div>
+    <div className="mt-1 text-[10px] text-muted-foreground">
+      Score = dependents + outgoing edges
+    </div>
   </div>
 );
 
@@ -435,6 +557,7 @@ const GraphView = () => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("reponav.quality") : null;
     return (saved as Quality) ?? "medium";
   });
+  const { resolvedTheme } = useTheme();
 
   const setQuality = (q: Quality) => {
     setQualityState(q);
@@ -461,11 +584,12 @@ const GraphView = () => {
           onPointerMissed={() => selectNode(null)}
         >
           <Suspense fallback={null}>
-            <Scene quality={cfg} />
+            <Scene quality={cfg} isLightMode={resolvedTheme === "light"} />
           </Suspense>
         </Canvas>
       )}
       <QualityToggle quality={quality} setQuality={setQuality} />
+      <HeatmapLegend />
       <Hint />
     </div>
   );

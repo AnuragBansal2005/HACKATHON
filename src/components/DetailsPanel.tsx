@@ -1,27 +1,11 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowDownRight, ArrowUpLeft, FileCode, Loader2, Shield, ShieldAlert, X } from "lucide-react";
+import { ArrowDownRight, ArrowUpLeft, FileCode, Loader2, X } from "lucide-react";
 import { useGraphStore } from "@/store/useGraphStore";
 import { api } from "@/services/api";
-import type { FileSummary } from "@/types/graph";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
-
-const RiskBadge = ({ level }: { level: FileSummary["riskLevel"] }) => {
-  const map = {
-    low: { cls: "bg-success/15 text-success border-success/30", icon: <Shield className="h-3 w-3" />, label: "Low risk" },
-    medium: { cls: "bg-warning/15 text-warning border-warning/30", icon: <Shield className="h-3 w-3" />, label: "Medium risk" },
-    high: { cls: "bg-destructive/15 text-destructive border-destructive/40", icon: <ShieldAlert className="h-3 w-3" />, label: "High risk" },
-  } as const;
-  const r = map[level];
-  return (
-    <span className={cn("inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium", r.cls)}>
-      {r.icon} {r.label}
-    </span>
-  );
-};
 
 const DetailsPanel = () => {
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
@@ -36,14 +20,17 @@ const DetailsPanel = () => {
 
   useEffect(() => {
     if (!selectedNodeId || summaries[selectedNodeId]) return;
+
     let cancelled = false;
     setLoading(true);
     setError(null);
+
     api
       .getSummary(selectedNodeId)
       .then((s) => !cancelled && cacheSummary(s))
       .catch(() => !cancelled && setError("Could not load summary."))
       .finally(() => !cancelled && setLoading(false));
+
     return () => {
       cancelled = true;
     };
@@ -68,7 +55,7 @@ const DetailsPanel = () => {
             </div>
             <div className="text-sm font-medium text-foreground">No file selected</div>
             <p className="text-xs text-muted-foreground">
-              Click any node in the graph or pick a file from the sidebar to see its AI summary, dependencies, and risk profile.
+              Click any node in the graph or pick a file from the sidebar to see its AI summary and dependencies.
             </p>
           </motion.div>
         ) : (
@@ -98,18 +85,19 @@ const DetailsPanel = () => {
               <div className="space-y-5 p-4">
                 {loading && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading AI summary…
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading AI summary...
                   </div>
                 )}
+
                 {error && (
                   <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
                     {error}
                   </div>
                 )}
+
                 {summary && (
                   <>
                     <div className="flex flex-wrap gap-2">
-                      <RiskBadge level={summary.riskLevel} />
                       <Badge variant="outline" className="border-border bg-secondary/50 font-mono text-[10px]">
                         {summary.language}
                       </Badge>

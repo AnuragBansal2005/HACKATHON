@@ -7,20 +7,8 @@ import GraphView from "@/components/GraphView";
 import Sidebar from "@/components/Sidebar";
 import DetailsPanel from "@/components/DetailsPanel";
 import AIDrawer from "@/components/AIDrawer";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useGraphStore } from "@/store/useGraphStore";
-
-const Legend = () => (
-  <div className="absolute bottom-4 left-4 z-10 glass rounded-lg px-3 py-2 text-[11px]">
-    <div className="mb-1 font-semibold uppercase tracking-wider text-muted-foreground">Legend</div>
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-node-entry" /> Entry</span>
-      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-node-core" /> Core</span>
-      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-node-utility" /> Utility</span>
-      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-node-risk shadow-[0_0_6px_hsl(var(--node-risk))]" /> High risk</span>
-    </div>
-    <div className="mt-1 text-[10px] text-muted-foreground">Shortcuts: <kbd className="font-mono">+</kbd>/<kbd className="font-mono">-</kbd> zoom · <kbd className="font-mono">0</kbd> fit</div>
-  </div>
-);
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -34,7 +22,6 @@ const Dashboard = () => {
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-      {/* Top bar */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-sidebar/70 px-3 backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-muted-foreground" onClick={() => navigate("/")}>
@@ -47,17 +34,18 @@ const Dashboard = () => {
             </div>
             <span className="font-mono text-xs font-semibold">RepoNav</span>
           </div>
-          <div className="ml-2 flex items-center gap-1.5 rounded-md border border-border bg-secondary/40 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+          <div className="ml-2 hidden items-center gap-1.5 rounded-md border border-border bg-secondary/40 px-2 py-1 font-mono text-[11px] text-muted-foreground md:flex">
             <Github className="h-3 w-3" /> {graph.repoName}
           </div>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span>{graph.nodes.length} files</span>
-          <span>·</span>
-          <span>{graph.edges.length} dependencies</span>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="hidden sm:inline">{graph.nodes.length} files</span>
+          <span className="hidden sm:inline">·</span>
+          <span className="hidden sm:inline">{graph.edges.length} dependencies</span>
+          <ThemeToggle className="h-7 gap-1.5 border-border bg-secondary/30 px-2" />
           <AIDrawer
             trigger={
-              <Button size="sm" className="h-7 gap-1.5 bg-gradient-primary text-primary-foreground hover:opacity-90">
+              <Button size="sm" className="h-7 gap-1.5 bg-primary px-3 text-primary-foreground shadow-[0_10px_24px_-14px_hsl(var(--primary)/0.75)] ring-1 ring-white/20 hover:bg-primary/95">
                 <Sparkles className="h-3.5 w-3.5" /> Ask AI
               </Button>
             }
@@ -75,7 +63,6 @@ const Dashboard = () => {
           className="relative min-w-0 flex-1"
         >
           <GraphView />
-          <Legend />
         </motion.main>
 
         <DetailsPanel />
