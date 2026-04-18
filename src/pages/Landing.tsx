@@ -193,9 +193,9 @@ const Landing = () => {
       <div className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 top-[80vh] h-96 w-96 rounded-full bg-accent/15 blur-3xl" />
 
-      <div
+      <section
         aria-hidden="true"
-        className="pointer-events-none fixed inset-x-0 top-0 z-30 flex min-h-screen items-start justify-center px-6 pt-[14vh] md:pt-[16vh]"
+        className="pointer-events-none relative z-30 flex min-h-screen items-center justify-center px-6"
       >
         <SplitText
           text="CODEMAP"
@@ -210,7 +210,7 @@ const Landing = () => {
           triggerOnScroll={false}
           textAlign="center"
         />
-      </div>
+      </section>
 
       {/* Nav */}
       <header className="fixed inset-x-0 top-0 z-40 border-b border-border/40 bg-background/70 backdrop-blur-xl">
@@ -266,9 +266,9 @@ const Landing = () => {
           transition={{ duration: 0.6, delay: 0.05 }}
           className="mt-2 font-mono text-5xl font-bold tracking-tight md:text-6xl"
         >
-          <span className="text-gradient">Navigate any repository</span>
+          <span className="text-foreground">Navigate any repository</span>
           <br />
-          <span className="text-foreground">at the speed of thought.</span>
+          <span className="text-muted-foreground">at the speed of thought.</span>
         </motion.h1>
 
         <motion.p

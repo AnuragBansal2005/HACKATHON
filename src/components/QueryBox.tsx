@@ -62,7 +62,12 @@ const QueryBox = () => {
               <X className="h-4 w-4" />
             </Button>
           )}
-          <Button type="submit" size="sm" className="h-8 gap-1.5 bg-gradient-primary text-primary-foreground hover:opacity-90" disabled={loading}>
+          <Button
+            type="submit"
+            size="sm"
+            className="h-8 gap-1.5 bg-primary text-primary-foreground shadow-[0_12px_28px_-16px_hsl(var(--primary)/0.6)] transition-colors hover:bg-primary/90"
+            disabled={loading}
+          >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
             Ask
           </Button>

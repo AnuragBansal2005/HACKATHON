@@ -28,9 +28,21 @@ router.post("/analyze", async (req: Request<{}, {}, AnalyzeRequestBody>, res: Re
   }
 
   try {
-    const files = await fetchRepo(repoUrl);
+    let files;
+    console.log("[analyze] cloning repository");
+    try {
+      files = await fetchRepo(repoUrl);
+    } catch {
+      return res.status(400).json({ error: "Clone failed. Make sure the repo is public and the URL is correct." });
+    }
+
+    console.log("[analyze] parsing");
     const parsed = parseCode(files);
+
+    console.log("[analyze] building graph");
     const graph = buildGraph(parsed);
+
+    console.log("[analyze] enriching");
     const enriched = await enrichWithAI(graph);
 
     const graphId = `g-${Date.now().toString(36)}`;

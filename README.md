@@ -61,7 +61,7 @@ Backend runs on `http://localhost:3001` and exposes:
 - `POST /api/query`
 - `GET /api/health`
 
-> Optional: set `GITHUB_TOKEN` in `backend/.env` to avoid GitHub API rate limits and set `ANTHROPIC_KEY` for AI summaries.
+> Optional: set `ANTHROPIC_KEY` in `backend/.env` for AI summaries.
 
 ---
 

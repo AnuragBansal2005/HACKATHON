@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html, Line, Stars } from "@react-three/drei";
 import * as THREE from "three";
-import { Gauge } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useGraphStore } from "@/store/useGraphStore";
 import type { RepoNode, RepoEdge } from "@/types/graph";
@@ -24,6 +23,18 @@ interface HeatInfo {
   score: number;
   normalized: number;
 }
+
+interface ParticleFieldProps {
+  isLightMode: boolean;
+  heavy: boolean;
+  motionEnergyRef: { current: number };
+}
+
+const EDGE_RENDER_LIMIT: Record<Quality, number> = {
+  low: 900,
+  medium: 1800,
+  high: 3200,
+};
 
 const QUALITY: Record<Quality, QualityConfig> = {
   low: {
@@ -55,7 +66,122 @@ const QUALITY: Record<Quality, QualityConfig> = {
   },
 };
 
+const InteractiveParticles = ({ isLightMode, heavy, motionEnergyRef }: ParticleFieldProps) => {
+  const count = heavy ? 170 : 320;
+  const radius = heavy ? 30 : 36;
+
+  const pointsRef = useRef<THREE.Points>(null);
+  const posArray = useMemo(() => new Float32Array(count * 3), [count]);
+  const baseArray = useMemo(() => new Float32Array(count * 3), [count]);
+
+  useEffect(() => {
+    const rng = mulberry32(1337);
+    for (let i = 0; i < count; i++) {
+      const stride = i * 3;
+      const x = (rng() - 0.5) * radius;
+      const y = (rng() - 0.5) * radius;
+      const z = (rng() - 0.5) * (heavy ? 8 : 12);
+      posArray[stride] = x;
+      posArray[stride + 1] = y;
+      posArray[stride + 2] = z;
+      baseArray[stride] = x;
+      baseArray[stride + 1] = y;
+      baseArray[stride + 2] = z;
+    }
+  }, [count, radius, heavy, posArray, baseArray]);
+
+  useFrame((state) => {
+    if (!pointsRef.current) return;
+
+    const t = state.clock.elapsedTime;
+    const energy = motionEnergyRef.current;
+    const amp = (heavy ? 0.24 : 0.42) * energy;
+    const relax = heavy ? 0.06 : 0.08;
+
+    for (let i = 0; i < count; i++) {
+      const stride = i * 3;
+      const baseX = baseArray[stride];
+      const baseY = baseArray[stride + 1];
+      const baseZ = baseArray[stride + 2];
+
+      const targetX = baseX + Math.sin(t * 0.72 + i * 0.17) * amp;
+      const targetY = baseY + Math.cos(t * 0.64 + i * 0.23) * amp;
+      const targetZ = baseZ + Math.sin(t * 0.55 + i * 0.12) * amp * 0.8;
+
+      posArray[stride] += (targetX - posArray[stride]) * relax;
+      posArray[stride + 1] += (targetY - posArray[stride + 1]) * relax;
+      posArray[stride + 2] += (targetZ - posArray[stride + 2]) * (relax * 0.9);
+    }
+
+    const geometry = pointsRef.current.geometry as THREE.BufferGeometry;
+    const positionAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
+    positionAttr.needsUpdate = true;
+  });
+
+  return (
+    <points ref={pointsRef} frustumCulled={false}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          array={posArray}
+          count={count}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={heavy ? 0.1 : 0.12}
+        sizeAttenuation
+        transparent
+        opacity={isLightMode ? 0.42 : 0.32}
+        color={isLightMode ? "#70c5ff" : "#6fd7ff"}
+        depthWrite={false}
+      />
+    </points>
+  );
+};
+
 function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec3> {
+  if (nodes.length === 0) return {};
+
+  // O(n) fallback for very large repositories to avoid expensive quadratic layout cost.
+  if (nodes.length > 220) {
+    const incoming = new Map<string, number>();
+    const outgoing = new Map<string, number>();
+    nodes.forEach((n) => {
+      incoming.set(n.id, 0);
+      outgoing.set(n.id, 0);
+    });
+    edges.forEach((e) => {
+      incoming.set(e.target, (incoming.get(e.target) ?? 0) + 1);
+      outgoing.set(e.source, (outgoing.get(e.source) ?? 0) + 1);
+    });
+
+    const sorted = [...nodes].sort(
+      (a, b) =>
+        (incoming.get(b.id) ?? 0) + (outgoing.get(b.id) ?? 0) -
+        ((incoming.get(a.id) ?? 0) + (outgoing.get(a.id) ?? 0)),
+    );
+
+    const out: Record<string, Vec3> = {};
+    const perRing = 24;
+    const ringGap = 2.9;
+    const startRadius = 3.2;
+
+    sorted.forEach((node, index) => {
+      const ring = Math.floor(index / perRing);
+      const inRingIndex = index % perRing;
+      const ringCount = Math.min(perRing, sorted.length - ring * perRing);
+      const angle = (inRingIndex / ringCount) * Math.PI * 2;
+      const radius = startRadius + ring * ringGap;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      const z = ((index % 7) - 3) * 0.55;
+      out[node.id] = [x, y, z];
+    });
+
+    return out;
+  }
+
   const positions: Record<string, THREE.Vector3> = {};
   const rng = mulberry32(42);
   nodes.forEach((n) => {
@@ -66,8 +192,8 @@ function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec
     );
   });
 
-  const k = 3.2;
-  const iterations = nodes.length > 80 ? 140 : 200;
+  const k = nodes.length > 140 ? 2.9 : 3.2;
+  const iterations = nodes.length > 140 ? 84 : nodes.length > 80 ? 120 : 180;
   for (let i = 0; i < iterations; i++) {
     const disp: Record<string, THREE.Vector3> = {};
     nodes.forEach((n) => (disp[n.id] = new THREE.Vector3()));
@@ -188,66 +314,41 @@ const NodeMesh = ({
   onPointerOver,
   onPointerOut,
 }: NodeMeshProps) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const haloRef = useRef<THREE.Mesh>(null);
-  const borderRef = useRef<THREE.LineSegments>(null);
-  const scaleVector = useRef(new THREE.Vector3());
-  const haloScaleVector = useRef(new THREE.Vector3());
-  const borderScaleVector = useRef(new THREE.Vector3());
   const baseSize = 0.35 + Math.min(node.loc / 800, 1.2);
   const color = nodeColor(node);
 
-  useFrame((_, delta) => {
-    if (!meshRef.current) return;
-    const target = isHovered || isSelected ? baseSize * 1.35 : baseSize;
-    scaleVector.current.set(target, target, target);
-    meshRef.current.scale.lerp(scaleVector.current, 0.15);
-
-    if (borderRef.current) {
-      const borderTarget = target * 1.08;
-      borderScaleVector.current.set(borderTarget, borderTarget, borderTarget);
-      borderRef.current.scale.lerp(borderScaleVector.current, 0.18);
-      const borderMat = borderRef.current.material as THREE.LineBasicMaterial;
-      const baseOpacity = 0.2 + heat.normalized * 0.45;
-      const activeBoost = isSelected || isHovered ? 0.15 : 0;
-      borderMat.opacity = THREE.MathUtils.lerp(borderMat.opacity, baseOpacity + activeBoost, 0.15);
-    }
-
-    if (haloRef.current) {
-      const showHalo = isSelected || isHighlighted || isFocused;
-      const haloTarget = showHalo ? baseSize * 1.9 : baseSize * 1.05;
-      haloScaleVector.current.set(haloTarget, haloTarget, haloTarget);
-      haloRef.current.scale.lerp(haloScaleVector.current, 0.12);
-      const mat = haloRef.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = THREE.MathUtils.lerp(mat.opacity, showHalo ? 0.25 : 0, 0.12);
-    }
-
-    if (quality.rotateNodes) meshRef.current.rotation.y += delta * 0.2;
-  });
-
   const opacity = isDimmed ? 0.22 : 1;
+  const targetScale = isHovered || isSelected ? baseSize * 1.18 : baseSize;
+  const borderScale = targetScale * 1.08;
+  const showHalo = quality.showHalo && (isSelected || isFocused);
+  const haloScale = showHalo ? baseSize * 1.55 : baseSize * 1.02;
+  const showHeatBorder = (isSelected || isHovered || isHighlighted || heat.normalized > 0.72) && !isDimmed;
+  const borderOpacity = 0.12 + heat.normalized * 0.32 + (isSelected || isHovered ? 0.08 : 0);
 
   return (
     <group position={position}>
       {quality.showHalo && (
-        <mesh ref={haloRef}>
+        <mesh scale={haloScale}>
           <sphereGeometry args={[1, 16, 16]} />
-          <meshBasicMaterial color={color} transparent opacity={0} depthWrite={false} />
+          <meshBasicMaterial color={color} transparent opacity={showHalo ? 0.25 : 0} depthWrite={false} />
         </mesh>
       )}
 
-      <lineSegments ref={borderRef}>
-        <edgesGeometry args={[new THREE.SphereGeometry(1, Math.max(quality.segments, 12), Math.max(quality.segments, 12))]} />
-        <lineBasicMaterial
-          color={heatColor(heat.normalized)}
-          transparent
-          opacity={0.12}
-          depthWrite={false}
-        />
-      </lineSegments>
+      {showHeatBorder && (
+        <lineSegments scale={borderScale}>
+          <edgesGeometry args={[new THREE.SphereGeometry(1, Math.max(quality.segments, 10), Math.max(quality.segments, 10))]} />
+          <lineBasicMaterial
+            color={heatColor(heat.normalized)}
+            transparent
+            opacity={Math.min(borderOpacity, 0.55)}
+            depthWrite={false}
+          />
+        </lineSegments>
+      )}
 
       <mesh
-        ref={meshRef}
+        scale={targetScale}
+        rotation={[0, quality.rotateNodes ? 0.12 : 0, 0]}
         onClick={(e) => {
           e.stopPropagation();
           onClick();
@@ -263,12 +364,15 @@ const NodeMesh = ({
         }}
       >
         <sphereGeometry args={[1, quality.segments, quality.segments]} />
-        <meshStandardMaterial
+        <meshPhysicalMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={isSelected || isHovered ? 0.9 : 0.35}
-          metalness={0.3}
-          roughness={0.35}
+          emissiveIntensity={isSelected || isHovered ? 0.64 : 0.28}
+          metalness={0.62}
+          roughness={0.2}
+          clearcoat={1}
+          clearcoatRoughness={0.1}
+          reflectivity={0.92}
           transparent
           opacity={opacity}
         />
@@ -294,11 +398,12 @@ interface EdgeLineProps {
   from: Vec3;
   to: Vec3;
   active: boolean;
+  highlighted: boolean;
   dimmed: boolean;
   baseOpacity: number;
 }
 
-const EdgeLine = ({ from, to, active, dimmed, baseOpacity }: EdgeLineProps) => {
+const EdgeLine = ({ from, to, active, highlighted, dimmed, baseOpacity }: EdgeLineProps) => {
   const start = useMemo(() => new THREE.Vector3(...from), [from]);
   const end = useMemo(() => new THREE.Vector3(...to), [to]);
   const points = useMemo<Vec3[]>(() => [from, to], [from, to]);
@@ -310,21 +415,21 @@ const EdgeLine = ({ from, to, active, dimmed, baseOpacity }: EdgeLineProps) => {
     [dirNorm],
   );
 
-  const color = active ? "#06b6d4" : "#c2d2e4";
-  const opacity = dimmed ? 0.14 : active ? 1 : Math.max(baseOpacity, 0.5);
+  const color = highlighted ? "#ffffff" : active ? "#06b6d4" : "#d1d5db";
+  const opacity = dimmed ? 0.1 : highlighted ? 0.3 : active ? 0.32 : 0.15;
 
   return (
     <>
-      <Line points={points} color={color} lineWidth={active ? 2.9 : 2.3} transparent opacity={opacity} />
+      <Line points={points} color={color} lineWidth={active || highlighted ? 2.9 : 2.3} transparent opacity={opacity} />
       <mesh position={arrowPos} quaternion={arrowQuat} renderOrder={2}>
-        <coneGeometry args={[0.18, 0.54, 14]} />
-        <meshBasicMaterial color={color} transparent opacity={Math.min(opacity + 0.16, 1)} depthWrite={false} />
+        <coneGeometry args={[0.14, 0.42, 14]} />
+        <meshBasicMaterial color={color} transparent opacity={highlighted ? 0.3 : 0.15} depthWrite={false} />
       </mesh>
     </>
   );
 };
 
-const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: boolean }) => {
+const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig; isLightMode: boolean; isHeavyGraph: boolean }) => {
   const graph = useGraphStore((s) => s.graph);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
@@ -338,11 +443,17 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
   const lastSelectedNodeId = useRef<string | null>(null);
   const centerTarget = useRef(new THREE.Vector3());
   const cameraDirectionScratch = useRef(new THREE.Vector3());
+  const motionEnergyRef = useRef(0);
+  const previousCameraPosRef = useRef(new THREE.Vector3());
+  const previousTargetRef = useRef(new THREE.Vector3());
+  const movementInitRef = useRef(false);
 
   const layout = useMemo(() => {
     if (!graph) return {} as Record<string, Vec3>;
     return computeLayout(graph.nodes, graph.edges);
   }, [graph]);
+
+  const highlightedSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
 
   useEffect(() => {
     if (!selectedNodeId || selectedNodeId === lastSelectedNodeId.current) return;
@@ -367,27 +478,47 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
     return set;
   }, [focusId, graph]);
 
+  const renderedEdges = useMemo(() => {
+    if (!graph) return [] as RepoEdge[];
+    const limit = EDGE_RENDER_LIMIT[quality.segments <= 10 ? "low" : quality.segments <= 16 ? "medium" : "high"];
+    if (graph.edges.length <= limit) return graph.edges;
+
+    const important: RepoEdge[] = [];
+    const rest: RepoEdge[] = [];
+
+    for (const edge of graph.edges) {
+      const onFocus = !!focusId && (edge.source === focusId || edge.target === focusId);
+      const onHighlight = highlightedSet.has(edge.source) || highlightedSet.has(edge.target);
+      if (onFocus || onHighlight) important.push(edge);
+      else rest.push(edge);
+    }
+
+    const budget = Math.max(limit - important.length, 0);
+    if (budget === 0) return important.slice(0, limit);
+
+    const stride = Math.max(1, Math.ceil(rest.length / budget));
+    const sampled = rest.filter((_, i) => i % stride === 0).slice(0, budget);
+    return [...important, ...sampled];
+  }, [graph, quality.segments, focusId, highlightedSet]);
+
   const heatmap = useMemo(() => {
     if (!graph) return {} as Record<string, HeatInfo>;
 
     const outgoing = new Map<string, number>();
-    const dependents = new Map<string, number>();
 
     graph.nodes.forEach((node) => {
       outgoing.set(node.id, 0);
-      dependents.set(node.id, 0);
     });
 
     graph.edges.forEach((edge) => {
       outgoing.set(edge.source, (outgoing.get(edge.source) ?? 0) + 1);
-      dependents.set(edge.target, (dependents.get(edge.target) ?? 0) + 1);
     });
 
     let maxScore = 0;
     const rawScores = new Map<string, number>();
 
     graph.nodes.forEach((node) => {
-      const score = (outgoing.get(node.id) ?? 0) + (dependents.get(node.id) ?? 0);
+      const score = outgoing.get(node.id) ?? 0;
       rawScores.set(node.id, score);
       maxScore = Math.max(maxScore, score);
     });
@@ -410,7 +541,27 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
     if (!controlsRef.current) return;
 
     const controls = controlsRef.current;
+    const cameraPos = controls.object.position as THREE.Vector3;
     const target = controls.target as THREE.Vector3;
+
+    if (!movementInitRef.current) {
+      previousCameraPosRef.current.copy(cameraPos);
+      previousTargetRef.current.copy(target);
+      movementInitRef.current = true;
+    }
+
+    const moveAmount =
+      previousCameraPosRef.current.distanceTo(cameraPos) +
+      previousTargetRef.current.distanceTo(target);
+
+    if (moveAmount > 0.00035) {
+      motionEnergyRef.current = Math.min(1, motionEnergyRef.current + moveAmount * 26);
+    } else {
+      motionEnergyRef.current *= 0.9;
+    }
+
+    previousCameraPosRef.current.copy(cameraPos);
+    previousTargetRef.current.copy(target);
 
     if (centerPulse.current > 0) {
       target.lerp(centerTarget.current, 0.14);
@@ -418,15 +569,15 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
       centerPulse.current = Math.max(0, centerPulse.current - 0.1);
     }
 
-    if (zoomPulse.current <= 0) return;
+    if (zoomPulse.current > 0) {
+      const direction = cameraDirectionScratch.current.copy(cameraPos).sub(target);
+      const desiredPosition = target.clone().add(direction.multiplyScalar(0.9));
 
-    const direction = cameraDirectionScratch.current.copy(controls.object.position).sub(target);
-    const desiredPosition = target.clone().add(direction.multiplyScalar(0.9));
+      cameraPos.lerp(desiredPosition, 0.12);
+      controls.update();
 
-    controls.object.position.lerp(desiredPosition, 0.12);
-    controls.update();
-
-    zoomPulse.current = Math.max(0, zoomPulse.current - 0.08);
+      zoomPulse.current = Math.max(0, zoomPulse.current - 0.08);
+    }
   });
 
   const bg = isLightMode ? "#d9efff" : "#070a13";
@@ -452,14 +603,15 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
         />
       )}
 
-      {graph.edges.map((e) => {
+      <InteractiveParticles isLightMode={isLightMode} heavy={isHeavyGraph} motionEnergyRef={motionEnergyRef} />
+
+      {renderedEdges.map((e) => {
         const from = layout[e.source];
         const to = layout[e.target];
         if (!from || !to) return null;
 
         const onFocus = !!focusId && (e.source === focusId || e.target === focusId);
-        const onHighlight =
-          highlightedNodeIds.includes(e.source) && highlightedNodeIds.includes(e.target);
+        const onHighlight = highlightedSet.has(e.source) || highlightedSet.has(e.target);
 
         const active = onFocus || onHighlight;
         const dimmed = !!connectedIds && !onFocus && !onHighlight;
@@ -470,6 +622,7 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
             from={from}
             to={to}
             active={active}
+            highlighted={onHighlight}
             dimmed={dimmed}
             baseOpacity={quality.edgeOpacityBase}
           />
@@ -482,7 +635,7 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
 
         const isSelected = n.id === selectedNodeId;
         const isHovered = n.id === hoveredNodeId;
-        const isHighlighted = highlightedNodeIds.includes(n.id);
+        const isHighlighted = highlightedSet.has(n.id);
         const isDimmed = connectedIds ? !connectedIds.has(n.id) : false;
         const isFocused = !!focusId && connectedIds?.has(n.id) === true;
 
@@ -518,47 +671,22 @@ const Scene = ({ quality, isLightMode }: { quality: QualityConfig; isLightMode: 
   );
 };
 
-const QualityToggle = ({
-  quality,
-  setQuality,
-}: {
-  quality: Quality;
-  setQuality: (q: Quality) => void;
-}) => (
-  <div className="absolute top-4 right-4 z-10 glass flex items-center gap-1 rounded-lg p-1 text-[11px]">
-    <Gauge className="ml-1 h-3 w-3 text-muted-foreground" />
-    {(["low", "medium", "high"] as Quality[]).map((q) => (
-      <button
-        key={q}
-        onClick={() => setQuality(q)}
-        className={`rounded-md px-2 py-1 font-medium capitalize transition-colors ${
-          quality === q
-            ? "bg-primary text-primary-foreground"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        {q}
-      </button>
-    ))}
-  </div>
-);
-
 const Hint = () => (
-  <div className="absolute bottom-4 right-4 z-10 glass rounded-lg px-3 py-2 text-[11px] text-muted-foreground pointer-events-none">
+  <div className="pointer-events-none absolute bottom-4 right-4 z-10 glass rounded-lg border border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
     Drag to rotate and pan · Scroll to zoom
   </div>
 );
 
 const HeatmapLegend = () => (
-  <div className="absolute bottom-4 left-4 z-10 glass rounded-lg px-3 py-2 text-[11px]">
-    <div className="mb-1 font-semibold uppercase tracking-wider text-muted-foreground">Risk Heatmap</div>
+  <div className="absolute bottom-4 left-4 z-10 glass rounded-lg border border-border/70 px-3 py-2 text-[11px]">
+    <div className="mb-1 font-semibold uppercase tracking-wider text-muted-foreground">Heatmap</div>
     <div className="h-2.5 w-44 rounded-full bg-[linear-gradient(90deg,#22c55e_0%,#eab308_55%,#ef4444_100%)]" />
     <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
       <span>Low</span>
       <span>High</span>
     </div>
     <div className="mt-1 text-[10px] text-muted-foreground">
-      Score = dependents + outgoing edges
+      Score = outgoing dependencies
     </div>
   </div>
 );
@@ -567,26 +695,28 @@ const GraphView = () => {
   const graph = useGraphStore((s) => s.graph);
   const selectNode = useGraphStore((s) => s.selectNode);
   const [ready, setReady] = useState(false);
-  const [quality, setQualityState] = useState<Quality>(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem("reponav.quality") : null;
-    return (saved as Quality) ?? "medium";
-  });
   const { resolvedTheme } = useTheme();
-
-  const setQuality = (q: Quality) => {
-    setQualityState(q);
-    try {
-      localStorage.setItem("reponav.quality", q);
-    } catch {
-      /* ignore */
-    }
-  };
 
   useEffect(() => {
     setReady(!!graph);
   }, [graph]);
 
-  const cfg = QUALITY[quality];
+  const isHeavyGraph = !!graph && (graph.nodes.length > 220 || graph.edges.length > 1200);
+  const quality: Quality = isHeavyGraph ? "low" : "medium";
+  const cfg = useMemo<QualityConfig>(() => {
+    const base = QUALITY[quality];
+    if (!isHeavyGraph) return base;
+    return {
+      ...base,
+      showStars: false,
+      showFog: false,
+      showHalo: false,
+      rotateNodes: false,
+      dpr: [1, 1],
+      edgeOpacityBase: 0.55,
+      segments: Math.min(base.segments, 10),
+    };
+  }, [quality, isHeavyGraph]);
 
   return (
     <div className="relative w-full h-full">
@@ -594,15 +724,14 @@ const GraphView = () => {
         <Canvas
           camera={{ position: [18, 14, 18], fov: 55, near: 0.1, far: 200 }}
           dpr={cfg.dpr}
-          gl={{ antialias: quality !== "low", powerPreference: "high-performance" }}
+          gl={{ antialias: !isHeavyGraph && quality !== "low", powerPreference: isHeavyGraph ? "low-power" : "high-performance" }}
           onPointerMissed={() => selectNode(null)}
         >
           <Suspense fallback={null}>
-            <Scene quality={cfg} isLightMode={resolvedTheme === "light"} />
+            <Scene quality={cfg} isLightMode={resolvedTheme === "light"} isHeavyGraph={isHeavyGraph} />
           </Suspense>
         </Canvas>
       )}
-      <QualityToggle quality={quality} setQuality={setQuality} />
       <HeatmapLegend />
       <Hint />
     </div>

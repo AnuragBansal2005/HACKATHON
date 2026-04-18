@@ -40,7 +40,8 @@ const DetailsPanel = () => {
   const findIdByName = (name: string) => graph?.nodes.find((n) => n.label === name)?.id;
 
   return (
-    <aside className="flex h-full w-[360px] flex-col border-l border-border bg-sidebar/70 backdrop-blur-xl">
+    <aside className="relative flex h-full w-[360px] flex-col border-l border-border/80 bg-sidebar/82 backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-primary/8 to-transparent" />
       <AnimatePresence mode="wait">
         {!selectedNodeId ? (
           <motion.div
@@ -50,7 +51,7 @@ const DetailsPanel = () => {
             exit={{ opacity: 0 }}
             className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground ring-1 ring-primary/20">
               <FileCode className="h-5 w-5" />
             </div>
             <div className="text-sm font-medium text-foreground">No file selected</div>

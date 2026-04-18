@@ -70,7 +70,8 @@ const Sidebar = () => {
   const tree = useMemo(() => filterTree(graph?.fileTree ?? [], q.trim()), [graph, q]);
 
   return (
-    <aside className="flex h-full w-72 flex-col border-r border-border bg-sidebar/70 backdrop-blur-xl">
+    <aside className="relative flex h-full w-72 flex-col border-r border-border/80 bg-sidebar/82 backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-primary/8 to-transparent" />
       <div className="border-b border-border/60 p-3">
         <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           <Map className="h-3.5 w-3.5" /> Onboarding path
@@ -88,7 +89,7 @@ const Sidebar = () => {
                   className={cn(
                     "group flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-all",
                     active
-                      ? "bg-primary/10 text-foreground ring-1 ring-primary/40"
+                      ? "bg-primary/12 text-foreground ring-1 ring-primary/45 shadow-[0_12px_24px_-22px_hsl(var(--primary)/0.95)]"
                       : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                   )}
                 >
