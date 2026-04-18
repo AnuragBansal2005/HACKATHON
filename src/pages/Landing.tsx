@@ -14,7 +14,7 @@ import {
   Map,
     MessageSquare,
   Quote,
-  FileCode,             
+  FileCode,
   Layers,
   Eye,
   Brain,
@@ -22,6 +22,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import ThemeToggle from "@/components/ThemeToggle";
+import LogoLoop, { type LogoItem } from "@/components/LogoLoop";
+import SplitText from "@/components/SplitText";
 import { api } from "@/services/api";
 import { useGraphStore } from "@/store/useGraphStore";
 import { toast } from "sonner";
@@ -36,8 +38,8 @@ const FEATURES = [
 const STEPS = [
   {
     icon: Github,
-    title: "1. Drop a repo URL",
-    desc: "Paste any public GitHub link. RepoNav clones, parses, and builds a dependency graph in seconds.",
+    title: "1. Drop a repository URL",
+    desc: "Paste any public GitHub link. CodeMap clones, parses, and builds a dependency graph in seconds.",
   },
   {
     icon: Brain,
@@ -75,7 +77,7 @@ const DEEP_FEATURES = [
   {
     icon: Map,
     title: "Onboarding paths",
-    desc: "A guided reading order — from entry points to the deep ends — generated per repo.",
+    desc: "A guided reading order — from entry points to the deep ends — generated per repository.",
   },
   {
     icon: FileCode,
@@ -91,7 +93,7 @@ const DEEP_FEATURES = [
 
 const TESTIMONIALS = [
   {
-    quote: "I shipped my first PR in a 400k-line repo on day two. RepoNav is unfair.",
+    quote: "I shipped my first PR in a 400k-line repository on day two. CodeMap is unfair.",
     name: "Maya R.",
     role: "Senior Engineer, fintech",
   },
@@ -111,7 +113,7 @@ const TESTIMONIALS = [
 
 const FAQS = [
   {
-    q: "Does RepoNav store my source code?",
+    q: "Does CodeMap store my source code?",
     a: "No. We parse repositories in ephemeral environments and store only the resulting graph metadata. Source is never persisted.",
   },
   {
@@ -119,7 +121,7 @@ const FAQS = [
     a: "TypeScript, JavaScript, Python, Go, Rust, and Java today. More coming — let us know what you need.",
   },
   {
-    q: "Can I use it on private repos?",
+    q: "Can I use it on private repositories?",
     a: "Yes, on the Pro and Team plans. We use a least-privilege GitHub App with read-only access.",
   },
   {
@@ -136,6 +138,15 @@ const NAV = [
   { label: "Features", href: "#features" },
   { label: "How it works", href: "#how" },
   { label: "FAQ", href: "#faq" },
+];
+
+const TRUSTED_LOGOS: LogoItem[] = [
+  { node: <span className="font-mono text-sm">vercel</span>, title: "Vercel" },
+  { node: <span className="font-mono text-sm">linear</span>, title: "Linear" },
+  { node: <span className="font-mono text-sm">supabase</span>, title: "Supabase" },
+  { node: <span className="font-mono text-sm">stripe</span>, title: "Stripe" },
+  { node: <span className="font-mono text-sm">datadog</span>, title: "Datadog" },
+  { node: <span className="font-mono text-sm">render</span>, title: "Render" },
 ];
 
 const fadeUp = {
@@ -182,14 +193,33 @@ const Landing = () => {
       <div className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
       <div className="pointer-events-none absolute -right-32 top-[80vh] h-96 w-96 rounded-full bg-accent/15 blur-3xl" />
 
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-x-0 top-0 z-30 flex min-h-screen items-start justify-center px-6 pt-[14vh] md:pt-[16vh]"
+      >
+        <SplitText
+          text="CODEMAP"
+          tag="h1"
+          className="font-mono text-[clamp(4.75rem,19vw,13rem)] font-black tracking-[0.22em] text-foreground drop-shadow-[0_18px_40px_rgba(0,0,0,0.18)]"
+          delay={130}
+          duration={1.7}
+          ease="power3.out"
+          splitType="chars"
+          from={{ opacity: 0, y: 40 }}
+          to={{ opacity: 1, y: 0 }}
+          triggerOnScroll={false}
+          textAlign="center"
+        />
+      </div>
+
       {/* Nav */}
-      <header className="sticky top-0 z-30 border-b border-border/40 bg-background/70 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-border/40 bg-background/70 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
           <a href="#top" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary shadow-glow">
               <Network className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-mono text-sm font-semibold tracking-tight">RepoNav</span>
+            <span className="font-mono text-sm font-semibold tracking-tight">CodeMap</span>
             <span className="ml-1 rounded-md border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               beta
             </span>
@@ -217,7 +247,7 @@ const Landing = () => {
             </a>
             <a
               href="#cta"
-              className="rounded-md bg-gradient-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-glow transition-opacity hover:opacity-90"
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-[0_10px_24px_-12px_hsl(var(--primary)/0.55)] transition-colors hover:bg-primary/90"
             >
               Try the demo
             </a>
@@ -225,27 +255,18 @@ const Landing = () => {
         </div>
       </header>
 
+      <div className="h-[61px]" aria-hidden="true" />
+
       <span id="top" />
 
-      {/* Hero */}
-      <main className="relative z-10 mx-auto max-w-5xl px-6 pt-16 text-center md:pt-20">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mx-auto inline-flex items-center gap-2 rounded-full border border-border bg-secondary/40 px-3 py-1 text-[11px] text-muted-foreground"
-        >
-          <Zap className="h-3 w-3 text-primary-glow" />
-          Repository Architecture Navigator
-        </motion.div>
-
+      <main className="relative z-10 mx-auto max-w-5xl px-6 pt-[clamp(18rem,42vh,26rem)] text-center md:pt-[clamp(20rem,40vh,28rem)]">
         <motion.h1
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.05 }}
-          className="mt-6 font-mono text-5xl font-bold tracking-tight md:text-6xl"
+          className="mt-2 font-mono text-5xl font-bold tracking-tight md:text-6xl"
         >
-          <span className="text-gradient">Navigate any repo</span>
+          <span className="text-gradient">Navigate any repository</span>
           <br />
           <span className="text-foreground">at the speed of thought.</span>
         </motion.h1>
@@ -256,7 +277,7 @@ const Landing = () => {
           transition={{ duration: 0.6, delay: 0.15 }}
           className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground"
         >
-          Drop in any GitHub repo. RepoNav builds an interactive 3D map of the architecture, surfaces high-impact files, and answers questions in plain English — your AI-powered tour guide for unfamiliar code.
+          Drop in any GitHub repository. CodeMap builds an interactive 3D map of the architecture, surfaces high-impact files, and answers questions in plain English — your AI-powered tour guide for unfamiliar code.
         </motion.p>
 
         <motion.form
@@ -273,13 +294,13 @@ const Landing = () => {
           <Input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://github.com/owner/repo"
+            placeholder="https://github.com/owner/repository"
             className="h-9 flex-1 border-0 bg-transparent font-mono text-sm placeholder:text-muted-foreground/70 focus-visible:ring-0"
           />
           <Button
             type="submit"
             disabled={loading}
-            className="h-9 gap-1.5 bg-gradient-primary text-primary-foreground shadow-glow hover:opacity-90"
+            className="h-9 gap-1.5 bg-primary text-primary-foreground shadow-[0_12px_28px_-16px_hsl(var(--primary)/0.6)] hover:bg-primary/90"
           >
             {loading ? (
               <>
@@ -322,15 +343,17 @@ const Landing = () => {
         <motion.p {...fadeUp} className="text-center text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
           Trusted by engineers shipping at
         </motion.p>
-        <motion.div
-          {...fadeUp}
-          className="mt-6 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 font-mono text-sm text-muted-foreground/80"
-        >
-          {["vercel", "linear", "supabase", "stripe", "datadog", "render"].map((b) => (
-            <span key={b} className="opacity-70 transition-opacity hover:opacity-100">
-              {b}
-            </span>
-          ))}
+        <motion.div {...fadeUp} className="mt-6 rounded-xl border border-border/50 bg-sidebar/30 px-2 py-2 backdrop-blur-sm">
+          <LogoLoop
+            logos={TRUSTED_LOGOS}
+            speed={58}
+            direction="left"
+            logoHeight={24}
+            gap={52}
+            fadeOut
+            scaleOnHover
+            ariaLabel="Trusted engineering brands"
+          />
         </motion.div>
       </section>
 
@@ -356,8 +379,8 @@ const Landing = () => {
               transition={{ duration: 0.5, delay: i * 0.08 }}
               className="glass-panel relative rounded-xl p-5"
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary text-primary-foreground shadow-glow">
-                <s.icon className="h-4 w-4" />
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/18 text-primary-glow ring-1 ring-primary/45 shadow-[0_14px_30px_-20px_hsl(var(--primary)/0.95)]">
+                <s.icon className="h-4.5 w-4.5" />
               </div>
               <div className="text-sm font-semibold">{s.title}</div>
               <div className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{s.desc}</div>
@@ -402,7 +425,7 @@ const Landing = () => {
             <span className="h-2.5 w-2.5 rounded-full bg-destructive/70" />
             <span className="h-2.5 w-2.5 rounded-full bg-warning/80" />
             <span className="h-2.5 w-2.5 rounded-full bg-success/80" />
-            <span className="ml-3 font-mono text-[11px] text-muted-foreground">reponav.app/dashboard</span>
+            <span className="ml-3 font-mono text-[11px] text-muted-foreground">codemap.app/dashboard</span>
           </div>
           <div className="grid grid-cols-12 gap-2 p-3">
             <div className="col-span-3 hidden rounded-lg bg-sidebar/60 p-3 md:block">
@@ -528,13 +551,13 @@ const Landing = () => {
               Stop reading code. <span className="text-gradient">Start understanding it.</span>
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
-              Try the demo with any GitHub repo — no signup required.
+              Try the demo with any GitHub repository — no signup required.
             </p>
             <a
               href="#cta"
-              className="mt-6 inline-flex items-center gap-1.5 rounded-md bg-gradient-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-glow transition-opacity hover:opacity-90"
+              className="mt-6 inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-[0_14px_30px_-18px_hsl(var(--primary)/0.65)] transition-colors hover:bg-primary/90"
             >
-              Analyze a repo <ArrowRight className="h-3.5 w-3.5" />
+              Analyze a repository <ArrowRight className="h-3.5 w-3.5" />
             </a>
           </div>
         </motion.div>
@@ -547,7 +570,7 @@ const Landing = () => {
             <div className="flex h-5 w-5 items-center justify-center rounded bg-gradient-primary">
               <Network className="h-2.5 w-2.5 text-primary-foreground" />
             </div>
-            <span className="font-mono">RepoNav © {new Date().getFullYear()}</span>
+            <span className="font-mono">CodeMap © {new Date().getFullYear()}</span>
           </div>
           <div className="flex items-center gap-5">
             {NAV.map((n) => (
@@ -566,6 +589,3 @@ const Landing = () => {
 };
 
 export default Landing;
-
-
-
