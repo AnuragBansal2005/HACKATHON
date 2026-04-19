@@ -64,8 +64,9 @@ router.post("/analyze", async (req: Request<Record<string, never>, Record<string
     console.log("[analyze] cloning repository");
     try {
       files = await fetchRepo(repoUrl);
-    } catch {
-      return res.status(400).json({ error: "Clone failed. Make sure the repo is public and the URL is correct." });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Repository fetch failed.";
+      return res.status(400).json({ error: `Repository fetch failed: ${reason}` });
     }
 
     console.log("[analyze] parsing");
