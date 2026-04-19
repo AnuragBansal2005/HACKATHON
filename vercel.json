@@ -1,14 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm --prefix backend install && npm run build",
-  "outputDirectory": "dist",
-  "functions": {
-    "api/[...all].ts": {
-      "maxDuration": 60
-    }
-  },
+  "buildCommand": "npm --prefix frontend install && npm run build",
+  "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  ],
+  "env": {
+    "VITE_API_BASE_URL": "@vite_api_base_url"
+  }
 }
