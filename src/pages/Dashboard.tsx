@@ -1,24 +1,57 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Github, Network, Sparkles } from "lucide-react";
+import { ArrowLeft, Github, Loader2, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import GraphView from "@/components/GraphView";
 import Sidebar from "@/components/Sidebar";
 import DetailsPanel from "@/components/DetailsPanel";
-import AIDrawer from "@/components/AIDrawer";
+import QueryBox from "@/components/QueryBox";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useGraphStore } from "@/store/useGraphStore";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const graph = useGraphStore((s) => s.graph);
+  const [hydrated, setHydrated] = useState(useGraphStore.persist.hasHydrated());
 
   useEffect(() => {
-    if (!graph) navigate("/", { replace: true });
-  }, [graph, navigate]);
+    const unsubHydrate = useGraphStore.persist.onHydrate(() => setHydrated(false));
+    const unsubFinish = useGraphStore.persist.onFinishHydration(() => setHydrated(true));
+    if (useGraphStore.persist.hasHydrated()) setHydrated(true);
+    return () => {
+      unsubHydrate();
+      unsubFinish();
+    };
+  }, []);
 
-  if (!graph) return null;
+  useEffect(() => {
+    if (hydrated && !graph) navigate("/", { replace: true });
+  }, [hydrated, graph, navigate]);
+
+  if (!hydrated) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-2 rounded-md border border-border/80 bg-secondary/30 px-3 py-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading repository graph...
+        </div>
+      </div>
+    );
+  }
+
+  if (!graph) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background px-6">
+        <div className="w-full max-w-md rounded-xl border border-border/80 bg-card p-6 text-center shadow-lg">
+          <h1 className="font-mono text-lg font-semibold text-foreground">No graph loaded</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Analyze a repository from the landing page to open the dashboard with graph data.
+          </p>
+          <Button className="mt-4" onClick={() => navigate("/")}>Analyze Repository</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -46,13 +79,6 @@ const Dashboard = () => {
           <span className="hidden sm:inline">·</span>
           <span className="hidden sm:inline">{graph.edges.length} dependencies</span>
           <ThemeToggle className="h-7 gap-1.5 border-border bg-secondary/30 px-2" />
-          <AIDrawer
-            trigger={
-              <Button size="sm" className="h-7 gap-1.5 bg-primary px-3 text-primary-foreground shadow-[0_10px_24px_-14px_hsl(var(--primary)/0.75)] ring-1 ring-white/20 hover:bg-primary/95">
-                <Sparkles className="h-3.5 w-3.5" /> Ask AI
-              </Button>
-            }
-          />
         </div>
       </header>
 
@@ -65,6 +91,7 @@ const Dashboard = () => {
           transition={{ duration: 0.4 }}
           className="relative min-w-0 flex-1"
         >
+          <QueryBox />
           <GraphView />
         </motion.main>
 

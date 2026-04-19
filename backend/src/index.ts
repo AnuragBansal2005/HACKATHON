@@ -10,10 +10,24 @@ const app = express();
 const PORT = process.env.PORT ?? 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL ?? "http://localhost:5173";
 
+const localhostDevOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+
+function isAllowedOrigin(origin?: string): boolean {
+  if (!origin) return true;
+  if (origin === FRONTEND_URL) return true;
+  return localhostDevOrigin.test(origin);
+}
+
 app.use(helmet());
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Origin not allowed by CORS"));
+    },
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
   })
