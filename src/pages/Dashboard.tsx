@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Github, Loader2, Network } from "lucide-react";
+import { ArrowLeft, FileStack, Github, Loader2, Network, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import GraphView from "@/components/GraphView";
 import Sidebar from "@/components/Sidebar";
 import DetailsPanel from "@/components/DetailsPanel";
-import QueryBox from "@/components/QueryBox";
-import ThemeToggle from "@/components/ThemeToggle";
+import AIDrawer from "@/components/AIDrawer";
 import { useGraphStore } from "@/store/useGraphStore";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const graph = useGraphStore((s) => s.graph);
+  const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const [hydrated, setHydrated] = useState(useGraphStore.persist.hasHydrated());
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     const unsubHydrate = useGraphStore.persist.onHydrate(() => setHydrated(false));
@@ -28,6 +29,12 @@ const Dashboard = () => {
   useEffect(() => {
     if (hydrated && !graph) navigate("/", { replace: true });
   }, [hydrated, graph, navigate]);
+
+  useEffect(() => {
+    if (selectedNodeId) {
+      setDetailsOpen(true);
+    }
+  }, [selectedNodeId]);
 
   if (!hydrated) {
     return (
@@ -78,7 +85,26 @@ const Dashboard = () => {
           <span className="hidden sm:inline">{graph.nodes.length} files</span>
           <span className="hidden sm:inline">·</span>
           <span className="hidden sm:inline">{graph.edges.length} dependencies</span>
-          <ThemeToggle className="h-7 gap-1.5 border-border bg-secondary/30 px-2" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 border-border bg-secondary/30 px-2.5 font-mono text-[11px]"
+            onClick={() => {
+              if (!selectedNodeId) return;
+              setDetailsOpen((v) => !v);
+            }}
+          >
+            <FileStack className="h-3.5 w-3.5" />
+            AI Summary
+            {selectedNodeId ? <span className="ml-1 rounded bg-primary/20 px-1 text-[10px] text-primary">1</span> : null}
+          </Button>
+          <AIDrawer
+            trigger={
+              <Button size="sm" className="h-7 gap-1.5 bg-gradient-to-r from-[#BF5AF2] via-[#8B5CF6] to-[#5B4BFF] px-3 text-white shadow-[0_10px_24px_-14px_rgba(191,90,242,0.7)] ring-1 ring-white/20 hover:opacity-95">
+                <Sparkles className="h-3.5 w-3.5" /> Ask AI
+              </Button>
+            }
+          />
         </div>
       </header>
 
@@ -91,12 +117,15 @@ const Dashboard = () => {
           transition={{ duration: 0.4 }}
           className="relative min-w-0 flex-1"
         >
-          <QueryBox />
           <GraphView />
         </motion.main>
-
-        <DetailsPanel />
       </div>
+
+      {detailsOpen && selectedNodeId && (
+        <div className="absolute bottom-0 right-0 top-12 z-30">
+          <DetailsPanel compact onClosePanel={() => setDetailsOpen(false)} />
+        </div>
+      )}
     </div>
   );
 };

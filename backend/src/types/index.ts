@@ -35,6 +35,27 @@ export interface AnalyzeRequestBody {
   repoUrl: string;
 }
 
+export interface FileAnalysisRequestBody {
+  graphId: string;
+  fileId: string;
+  filePath: string;
+  fileName: string;
+  level: number;
+  levelLabel: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatRequestBody {
+  graphId: string;
+  messages: ChatMessage[];
+  selectedNodeId?: string;
+  systemPrompt?: string;
+}
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type NodeCategory = "entry" | "core" | "utility" | "risk";

@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import ThemeToggle from "@/components/ThemeToggle";
 import LogoLoop, { type LogoItem } from "@/components/LogoLoop";
 import SplitText from "@/components/SplitText";
 import { api } from "@/services/api";
@@ -236,7 +235,6 @@ const Landing = () => {
             ))}
           </nav>
           <div className="flex items-center gap-2">
-            <ThemeToggle className="h-8 gap-1.5 border-border bg-secondary/40 px-2 text-xs" />
             <a
               href="https://github.com"
               target="_blank"

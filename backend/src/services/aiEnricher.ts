@@ -1,55 +1,46 @@
-import axios from "axios";
 import { Graph, GraphNode } from "../types";
+import { callGroq } from "./groqClient";
+const MAX_NODES_TO_ENRICH = 6;
+const BATCH_SIZE = 2;
 
-const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const MAX_NODES_TO_ENRICH = 30;
-const BATCH_SIZE = 4;
-
-async function getSummary(node: GraphNode, apiKey: string): Promise<string> {
+async function getSummary(node: GraphNode): Promise<string> {
   const prompt = `You are analyzing a source code file in a GitHub repository.\n\nFile path: ${node.id}\nFile type: ${node.type}\nLines of code: ${node.loc}\nOutgoing dependencies: ${node.dependencyCount}\n\nIn exactly 1-2 sentences, describe what this file most likely does based on its path and role. Be specific and practical. No filler.`;
 
-  const { data } = await axios.post(
-    ANTHROPIC_API,
-    {
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 120,
-      messages: [{ role: "user", content: prompt }],
-    },
-    {
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-      },
-    }
-  );
-
-  return (data.content[0]?.text as string | undefined)?.trim() ?? "";
+  return callGroq([{ role: "user", content: prompt }], 120);
 }
 
-async function batchEnrich(nodes: GraphNode[], apiKey: string): Promise<void> {
+async function batchEnrich(nodes: GraphNode[]): Promise<void> {
+  let hitRateLimit = false;
+
   for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
+    if (hitRateLimit) {
+      break;
+    }
+
     const batch = nodes.slice(i, i + BATCH_SIZE);
     await Promise.all(
       batch.map(async (node) => {
         try {
-          node.summary = await getSummary(node, apiKey);
-        } catch {
+          node.summary = await getSummary(node);
+        } catch (error) {
+          const status = (error as { response?: { status?: number } }).response?.status;
+          if (status === 429) {
+            hitRateLimit = true;
+          }
           node.summary = undefined;
         }
       })
     );
 
     if (i + BATCH_SIZE < nodes.length) {
-      await new Promise((r) => setTimeout(r, 280));
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
 }
 
 export async function enrichWithAI(graph: Graph): Promise<Graph> {
-  const apiKey = process.env.ANTHROPIC_KEY;
-  if (!apiKey) {
-    console.log("[ai] ANTHROPIC_KEY not set, skipping AI enrichment");
+  if (!process.env.GROQ_API_KEY) {
+    console.log("[ai] GROQ_API_KEY not set, skipping AI enrichment");
     return graph;
   }
 
@@ -57,6 +48,6 @@ export async function enrichWithAI(graph: Graph): Promise<Graph> {
     .sort((a, b) => b.dependencyCount - a.dependencyCount)
     .slice(0, MAX_NODES_TO_ENRICH);
 
-  await batchEnrich(topNodes, apiKey);
+  await batchEnrich(topNodes);
   return graph;
 }

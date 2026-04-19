@@ -41,6 +41,35 @@ export interface QueryResult {
   highlightedNodeIds: string[];
 }
 
+export interface FileAnalysisRequest {
+  graphId: string;
+  fileId: string;
+  filePath: string;
+  fileName: string;
+  level: number;
+  levelLabel: string;
+}
+
+export interface FileAnalysisResult {
+  markdown: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatRequest {
+  graphId: string;
+  messages: ChatMessage[];
+  selectedNodeId?: string;
+  systemPrompt?: string;
+}
+
+export interface ChatResult {
+  reply: string;
+}
+
 export interface FileTreeNode {
   name: string;
   path: string;

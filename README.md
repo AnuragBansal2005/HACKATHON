@@ -61,7 +61,7 @@ Backend runs on `http://localhost:3001` and exposes:
 - `POST /api/query`
 - `GET /api/health`
 
-> Optional: set `ANTHROPIC_KEY` in `backend/.env` for AI summaries.
+> Optional: set `GROQ_API_KEY` in `backend/.env` for AI summaries and chat.
 
 ---
 

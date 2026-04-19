@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { GraphData, FileSummary, OnboardingStep } from "@/types/graph";
+import type { ChatMessage, GraphData, FileSummary, OnboardingStep } from "@/types/graph";
+
+interface FileAnalysisState {
+  fileId: string | null;
+  loading: boolean;
+  error: string | null;
+  markdown: string | null;
+}
 
 interface GraphStore {
   graph: GraphData | null;
@@ -11,6 +18,11 @@ interface GraphStore {
   onboarding: OnboardingStep[];
   currentStepIndex: number;
   queryExplanation: string | null;
+  fileAnalysisOpen: boolean;
+  fileAnalysis: FileAnalysisState;
+  chatOpen: boolean;
+  chatMessages: ChatMessage[];
+  chatLoading: boolean;
 
   setGraph: (g: GraphData) => void;
   selectNode: (id: string | null) => void;
@@ -19,6 +31,13 @@ interface GraphStore {
   cacheSummary: (s: FileSummary) => void;
   setOnboarding: (steps: OnboardingStep[]) => void;
   setCurrentStep: (i: number) => void;
+  setFileAnalysisOpen: (open: boolean) => void;
+  setFileAnalysis: (state: Partial<FileAnalysisState>) => void;
+  setChatOpen: (open: boolean) => void;
+  setChatMessages: (messages: ChatMessage[]) => void;
+  appendChatMessage: (message: ChatMessage) => void;
+  setChatLoading: (loading: boolean) => void;
+  resetChat: () => void;
   reset: () => void;
 }
 
@@ -33,6 +52,16 @@ export const useGraphStore = create<GraphStore>()(
       onboarding: [],
       currentStepIndex: 0,
       queryExplanation: null,
+      fileAnalysisOpen: false,
+      fileAnalysis: {
+        fileId: null,
+        loading: false,
+        error: null,
+        markdown: null,
+      },
+      chatOpen: false,
+      chatMessages: [],
+      chatLoading: false,
 
       setGraph: (g) => set({ graph: g }),
       selectNode: (id) => set({ selectedNodeId: id }),
@@ -43,6 +72,20 @@ export const useGraphStore = create<GraphStore>()(
         set((state) => ({ summaries: { ...state.summaries, [s.fileId]: s } })),
       setOnboarding: (steps) => set({ onboarding: steps }),
       setCurrentStep: (i) => set({ currentStepIndex: i }),
+      setFileAnalysisOpen: (open) => set({ fileAnalysisOpen: open }),
+      setFileAnalysis: (state) =>
+        set((current) => ({
+          fileAnalysis: {
+            ...current.fileAnalysis,
+            ...state,
+          },
+        })),
+      setChatOpen: (open) => set({ chatOpen: open }),
+      setChatMessages: (messages) => set({ chatMessages: messages }),
+      appendChatMessage: (message) =>
+        set((current) => ({ chatMessages: [...current.chatMessages, message] })),
+      setChatLoading: (loading) => set({ chatLoading: loading }),
+      resetChat: () => set({ chatMessages: [], chatLoading: false }),
       reset: () =>
         set({
           graph: null,
@@ -53,6 +96,16 @@ export const useGraphStore = create<GraphStore>()(
           onboarding: [],
           currentStepIndex: 0,
           queryExplanation: null,
+          fileAnalysisOpen: false,
+          fileAnalysis: {
+            fileId: null,
+            loading: false,
+            error: null,
+            markdown: null,
+          },
+          chatOpen: false,
+          chatMessages: [],
+          chatLoading: false,
         }),
     }),
     {

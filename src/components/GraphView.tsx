@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html, Line, Stars } from "@react-three/drei";
 import * as THREE from "three";
-import { useTheme } from "next-themes";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useGraphStore } from "@/store/useGraphStore";
 import type { RepoNode, RepoEdge } from "@/types/graph";
+import { classifyNode, type ImportanceInfo } from "@/utils/fileImportance";
+import { FileImportanceLegend } from "@/components/FileImportancePanels";
 
 type Vec3 = [number, number, number];
 type Quality = "low" | "medium" | "high";
@@ -12,7 +14,6 @@ type Quality = "low" | "medium" | "high";
 interface QualityConfig {
   segments: number;
   edgeOpacityBase: number;
-  showHalo: boolean;
   showStars: boolean;
   showFog: boolean;
   dpr: [number, number];
@@ -27,6 +28,7 @@ interface HeatInfo {
 interface ParticleFieldProps {
   isLightMode: boolean;
   heavy: boolean;
+  mapRadius: number;
   motionEnergyRef: { current: number };
 }
 
@@ -40,7 +42,6 @@ const QUALITY: Record<Quality, QualityConfig> = {
   low: {
     segments: 10,
     edgeOpacityBase: 0.35,
-    showHalo: false,
     showStars: false,
     showFog: false,
     dpr: [1, 1],
@@ -49,7 +50,6 @@ const QUALITY: Record<Quality, QualityConfig> = {
   medium: {
     segments: 16,
     edgeOpacityBase: 0.42,
-    showHalo: true,
     showStars: false,
     showFog: true,
     dpr: [1, 1.5],
@@ -58,7 +58,6 @@ const QUALITY: Record<Quality, QualityConfig> = {
   high: {
     segments: 28,
     edgeOpacityBase: 0.5,
-    showHalo: true,
     showStars: true,
     showFog: true,
     dpr: [1, 2],
@@ -66,9 +65,13 @@ const QUALITY: Record<Quality, QualityConfig> = {
   },
 };
 
-const InteractiveParticles = ({ isLightMode, heavy, motionEnergyRef }: ParticleFieldProps) => {
-  const count = heavy ? 170 : 320;
-  const radius = heavy ? 30 : 36;
+const PARTICLE_DENSITY_MULTIPLIER = 4.0;
+
+const InteractiveParticles = ({ isLightMode, heavy, mapRadius, motionEnergyRef }: ParticleFieldProps) => {
+  const count = Math.max(120, Math.round((heavy ? 420 : 860) * PARTICLE_DENSITY_MULTIPLIER));
+  const outerRadius = Math.max(mapRadius * (heavy ? 1.45 : 1.6), heavy ? 64 : 80);
+  const innerRadius = Math.max(mapRadius * (heavy ? 0.2 : 0.18), heavy ? 10 : 12);
+  const depth = Math.max(mapRadius * 0.42, heavy ? 20 : 26);
 
   const pointsRef = useRef<THREE.Points>(null);
   const posArray = useMemo(() => new Float32Array(count * 3), [count]);
@@ -78,9 +81,12 @@ const InteractiveParticles = ({ isLightMode, heavy, motionEnergyRef }: ParticleF
     const rng = mulberry32(1337);
     for (let i = 0; i < count; i++) {
       const stride = i * 3;
-      const x = (rng() - 0.5) * radius;
-      const y = (rng() - 0.5) * radius;
-      const z = (rng() - 0.5) * (heavy ? 8 : 12);
+      const angle = rng() * Math.PI * 2;
+      const radialT = Math.sqrt(rng());
+      const distance = innerRadius + (outerRadius - innerRadius) * radialT;
+      const x = Math.cos(angle) * distance;
+      const y = Math.sin(angle) * distance;
+      const z = (rng() - 0.5) * depth;
       posArray[stride] = x;
       posArray[stride + 1] = y;
       posArray[stride + 2] = z;
@@ -88,15 +94,15 @@ const InteractiveParticles = ({ isLightMode, heavy, motionEnergyRef }: ParticleF
       baseArray[stride + 1] = y;
       baseArray[stride + 2] = z;
     }
-  }, [count, radius, heavy, posArray, baseArray]);
+  }, [count, outerRadius, innerRadius, depth, posArray, baseArray]);
 
   useFrame((state) => {
     if (!pointsRef.current) return;
 
     const t = state.clock.elapsedTime;
     const energy = motionEnergyRef.current;
-    const amp = (heavy ? 0.24 : 0.42) * energy;
-    const relax = heavy ? 0.06 : 0.08;
+    const amp = (heavy ? 0.17 : 0.25) * energy;
+    const relax = heavy ? 0.05 : 0.07;
 
     for (let i = 0; i < count; i++) {
       const stride = i * 3;
@@ -129,10 +135,10 @@ const InteractiveParticles = ({ isLightMode, heavy, motionEnergyRef }: ParticleF
         />
       </bufferGeometry>
       <pointsMaterial
-        size={heavy ? 0.1 : 0.12}
+        size={heavy ? 0.09 : 0.11}
         sizeAttenuation
         transparent
-        opacity={isLightMode ? 0.42 : 0.32}
+        opacity={isLightMode ? 0.44 : 0.35}
         color={isLightMode ? "#70c5ff" : "#6fd7ff"}
         depthWrite={false}
       />
@@ -142,6 +148,54 @@ const InteractiveParticles = ({ isLightMode, heavy, motionEnergyRef }: ParticleF
 
 function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec3> {
   if (nodes.length === 0) return {};
+
+  const radii = new Map(nodes.map((node) => [node.id, nodeRadius(node)]));
+
+  const resolveCollisions = (positions: Record<string, THREE.Vector3>) => {
+    for (let pass = 0; pass < 6; pass++) {
+      let adjusted = false;
+
+      for (let a = 0; a < nodes.length; a++) {
+        for (let b = a + 1; b < nodes.length; b++) {
+          const idA = nodes[a].id;
+          const idB = nodes[b].id;
+          const pa = positions[idA];
+          const pb = positions[idB];
+          if (!pa || !pb) continue;
+
+          const minDistance = (radii.get(idA) ?? 0) + (radii.get(idB) ?? 0) + NODE_CLEARANCE;
+          const delta = new THREE.Vector3().subVectors(pa, pb);
+          const distance = Math.max(delta.length(), 0.0001);
+
+          if (distance >= minDistance) continue;
+
+          const direction = delta.multiplyScalar(1 / distance);
+          const push = (minDistance - distance) / 2;
+          pa.addScaledVector(direction, push);
+          pb.addScaledVector(direction, -push);
+          adjusted = true;
+        }
+      }
+
+      if (!adjusted) break;
+    }
+  };
+
+  const normalizeAndBound = (positions: Record<string, THREE.Vector3>, targetRadius: number) => {
+    let maxRadius = 0;
+    nodes.forEach((n) => {
+      maxRadius = Math.max(maxRadius, positions[n.id].length());
+    });
+
+    if (maxRadius > targetRadius) {
+      const scale = targetRadius / maxRadius;
+      nodes.forEach((n) => {
+        positions[n.id].multiplyScalar(scale);
+      });
+    }
+  };
+
+  const positions: Record<string, THREE.Vector3> = {};
 
   // O(n) fallback for very large repositories to avoid expensive quadratic layout cost.
   if (nodes.length > 220) {
@@ -162,10 +216,9 @@ function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec
         ((incoming.get(a.id) ?? 0) + (outgoing.get(a.id) ?? 0)),
     );
 
-    const out: Record<string, Vec3> = {};
-    const perRing = 24;
-    const ringGap = 2.9;
-    const startRadius = 3.2;
+    const perRing = 16;
+    const ringGap = 5.4;
+    const startRadius = 6.2;
 
     sorted.forEach((node, index) => {
       const ring = Math.floor(index / perRing);
@@ -176,76 +229,67 @@ function computeLayout(nodes: RepoNode[], edges: RepoEdge[]): Record<string, Vec
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
       const z = ((index % 7) - 3) * 0.55;
-      out[node.id] = [x, y, z];
+      positions[node.id] = new THREE.Vector3(x, y, z);
     });
-
-    return out;
-  }
-
-  const positions: Record<string, THREE.Vector3> = {};
-  const rng = mulberry32(42);
-  nodes.forEach((n) => {
-    positions[n.id] = new THREE.Vector3(
-      (rng() - 0.5) * 20,
-      (rng() - 0.5) * 20,
-      (rng() - 0.5) * 20,
-    );
-  });
-
-  const k = nodes.length > 140 ? 2.9 : 3.2;
-  const iterations = nodes.length > 140 ? 84 : nodes.length > 80 ? 120 : 180;
-  for (let i = 0; i < iterations; i++) {
-    const disp: Record<string, THREE.Vector3> = {};
-    nodes.forEach((n) => (disp[n.id] = new THREE.Vector3()));
-
-    for (let a = 0; a < nodes.length; a++) {
-      for (let b = a + 1; b < nodes.length; b++) {
-        const pa = positions[nodes[a].id];
-        const pb = positions[nodes[b].id];
-        const delta = new THREE.Vector3().subVectors(pa, pb);
-        const dist = Math.max(delta.length(), 0.01);
-        const force = (k * k) / dist;
-        const dir = delta.normalize().multiplyScalar(force);
-        disp[nodes[a].id].add(dir);
-        disp[nodes[b].id].sub(dir);
-      }
-    }
-
-    edges.forEach((e) => {
-      const ps = positions[e.source];
-      const pt = positions[e.target];
-      if (!ps || !pt) return;
-      const delta = new THREE.Vector3().subVectors(ps, pt);
-      const dist = Math.max(delta.length(), 0.01);
-      const force = (dist * dist) / k;
-      const dir = delta.normalize().multiplyScalar(force);
-      disp[e.source].sub(dir);
-      disp[e.target].add(dir);
-    });
-
-    const t = 1.5 * (1 - i / iterations);
+  } else {
+    const rng = mulberry32(42);
     nodes.forEach((n) => {
-      const d = disp[n.id];
-      const len = Math.max(d.length(), 0.01);
-      const move = d.multiplyScalar(Math.min(len, t) / len);
-      positions[n.id].add(move);
-      // Mild global gravity keeps clusters readable and prevents over-scattering.
-      positions[n.id].multiplyScalar(0.975);
+      positions[n.id] = new THREE.Vector3(
+        (rng() - 0.5) * 20,
+        (rng() - 0.5) * 20,
+        (rng() - 0.5) * 20,
+      );
     });
+
+    const k = nodes.length > 140 ? 3.4 : 3.8;
+    const iterations = nodes.length > 140 ? 84 : nodes.length > 80 ? 120 : 180;
+    for (let i = 0; i < iterations; i++) {
+      const disp: Record<string, THREE.Vector3> = {};
+      nodes.forEach((n) => (disp[n.id] = new THREE.Vector3()));
+
+      for (let a = 0; a < nodes.length; a++) {
+        for (let b = a + 1; b < nodes.length; b++) {
+          const pa = positions[nodes[a].id];
+          const pb = positions[nodes[b].id];
+          const delta = new THREE.Vector3().subVectors(pa, pb);
+          const dist = Math.max(delta.length(), 0.01);
+          const force = (k * k) / dist;
+          const dir = delta.normalize().multiplyScalar(force);
+          disp[nodes[a].id].add(dir);
+          disp[nodes[b].id].sub(dir);
+        }
+      }
+
+      edges.forEach((e) => {
+        const ps = positions[e.source];
+        const pt = positions[e.target];
+        if (!ps || !pt) return;
+        const delta = new THREE.Vector3().subVectors(ps, pt);
+        const dist = Math.max(delta.length(), 0.01);
+        const force = (dist * dist) / k;
+        const dir = delta.normalize().multiplyScalar(force);
+        disp[e.source].sub(dir);
+        disp[e.target].add(dir);
+      });
+
+      const t = 1.5 * (1 - i / iterations);
+      nodes.forEach((n) => {
+        const d = disp[n.id];
+        const len = Math.max(d.length(), 0.01);
+        const move = d.multiplyScalar(Math.min(len, t) / len);
+        positions[n.id].add(move);
+        // Mild global gravity keeps clusters readable and prevents over-scattering.
+        positions[n.id].multiplyScalar(0.975);
+      });
+    }
   }
 
   // Normalize final spread so graph stays within a visually manageable radius.
-  let maxRadius = 0;
-  nodes.forEach((n) => {
-    maxRadius = Math.max(maxRadius, positions[n.id].length());
-  });
-  const targetRadius = 14;
-  if (maxRadius > 0) {
-    const scale = Math.min(targetRadius / maxRadius, 1.35);
-    nodes.forEach((n) => {
-      positions[n.id].multiplyScalar(scale);
-    });
-  }
+  const targetRadius = 19;
+
+  normalizeAndBound(positions, targetRadius);
+  resolveCollisions(positions);
+  normalizeAndBound(positions, targetRadius);
 
   const out: Record<string, Vec3> = {};
   Object.entries(positions).forEach(([id, v]) => {
@@ -264,10 +308,10 @@ function mulberry32(a: number) {
 }
 
 const CATEGORY_COLOR: Record<string, string> = {
-  entry: "#34d399",
-  core: "#60a5fa",
-  utility: "#a78bfa",
-  risk: "#f87171",
+  entry: "#2CFCCF",
+  core: "#54B8FF",
+  utility: "#A387FF",
+  risk: "#FF7A8A",
 };
 
 function nodeColor(n: RepoNode) {
@@ -285,9 +329,21 @@ function normalizeScore(score: number, max: number) {
   return Math.min(score / max, 1);
 }
 
+const LOC_TO_DIAMETER = 0.0065;
+const MIN_DIAMETER = 0.85;
+const MAX_DIAMETER = 4.6;
+const NODE_CLEARANCE = 0.7;
+
+function nodeRadius(node: RepoNode) {
+  const importance = classifyNode(node.path);
+  const diameter = Math.min(Math.max(node.loc * LOC_TO_DIAMETER, MIN_DIAMETER), MAX_DIAMETER);
+  return (diameter * importance.size) / 2;
+}
+
 interface NodeMeshProps {
   node: RepoNode;
   position: Vec3;
+  importance: ImportanceInfo;
   isSelected: boolean;
   isHovered: boolean;
   isFocused: boolean;
@@ -303,6 +359,7 @@ interface NodeMeshProps {
 const NodeMesh = ({
   node,
   position,
+  importance,
   isSelected,
   isHovered,
   isFocused,
@@ -314,38 +371,15 @@ const NodeMesh = ({
   onPointerOver,
   onPointerOut,
 }: NodeMeshProps) => {
-  const baseSize = 0.35 + Math.min(node.loc / 800, 1.2);
-  const color = nodeColor(node);
+  const diameter = Math.min(Math.max(node.loc * LOC_TO_DIAMETER, MIN_DIAMETER), MAX_DIAMETER);
+  const baseSize = (diameter * importance.size) / 2;
+  const color = importance.level > 0 ? importance.colors.bg : nodeColor(node);
 
-  const opacity = isDimmed ? 0.22 : 1;
-  const targetScale = isHovered || isSelected ? baseSize * 1.18 : baseSize;
-  const borderScale = targetScale * 1.08;
-  const showHalo = quality.showHalo && (isSelected || isFocused);
-  const haloScale = showHalo ? baseSize * 1.55 : baseSize * 1.02;
-  const showHeatBorder = (isSelected || isHovered || isHighlighted || heat.normalized > 0.72) && !isDimmed;
-  const borderOpacity = 0.12 + heat.normalized * 0.32 + (isSelected || isHovered ? 0.08 : 0);
+  const opacity = (isDimmed ? 0.22 : 1) * importance.colors.opacity;
+  const targetScale = isHovered || isSelected ? baseSize * 1.08 : baseSize;
 
   return (
     <group position={position}>
-      {quality.showHalo && (
-        <mesh scale={haloScale}>
-          <sphereGeometry args={[1, 16, 16]} />
-          <meshBasicMaterial color={color} transparent opacity={showHalo ? 0.25 : 0} depthWrite={false} />
-        </mesh>
-      )}
-
-      {showHeatBorder && (
-        <lineSegments scale={borderScale}>
-          <edgesGeometry args={[new THREE.SphereGeometry(1, Math.max(quality.segments, 10), Math.max(quality.segments, 10))]} />
-          <lineBasicMaterial
-            color={heatColor(heat.normalized)}
-            transparent
-            opacity={Math.min(borderOpacity, 0.55)}
-            depthWrite={false}
-          />
-        </lineSegments>
-      )}
-
       <mesh
         scale={targetScale}
         rotation={[0, quality.rotateNodes ? 0.12 : 0, 0]}
@@ -366,8 +400,8 @@ const NodeMesh = ({
         <sphereGeometry args={[1, quality.segments, quality.segments]} />
         <meshPhysicalMaterial
           color={color}
-          emissive={color}
-          emissiveIntensity={isSelected || isHovered ? 0.64 : 0.28}
+          emissive={importance.colors.border}
+          emissiveIntensity={isSelected || isHovered ? 0.22 : 0.08}
           metalness={0.62}
           roughness={0.2}
           clearcoat={1}
@@ -378,7 +412,7 @@ const NodeMesh = ({
         />
       </mesh>
 
-      {(isHovered || isSelected) && (
+      {isHovered && (
         <Html
           distanceFactor={10}
           position={[0, baseSize * 1.6, 0]}
@@ -390,6 +424,7 @@ const NodeMesh = ({
           </div>
         </Html>
       )}
+
     </group>
   );
 };
@@ -437,7 +472,7 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
   const selectNode = useGraphStore((s) => s.selectNode);
   const hoverNode = useGraphStore((s) => s.hoverNode);
 
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const zoomPulse = useRef(0);
   const centerPulse = useRef(0);
   const lastSelectedNodeId = useRef<string | null>(null);
@@ -453,6 +488,11 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
     return computeLayout(graph.nodes, graph.edges);
   }, [graph]);
 
+  const importanceMap = useMemo(() => {
+    if (!graph) return new Map<string, ImportanceInfo>();
+    return new Map(graph.nodes.map((node) => [node.id, classifyNode(node.path)]));
+  }, [graph]);
+
   const highlightedSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
 
   useEffect(() => {
@@ -464,7 +504,7 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
       centerTarget.current.set(selectedPosition[0], selectedPosition[1], selectedPosition[2]);
       centerPulse.current = 1;
     }
-  }, [selectedNodeId]);
+  }, [selectedNodeId, layout]);
 
   const focusId = selectedNodeId;
 
@@ -535,10 +575,22 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
     return map;
   }, [graph]);
 
-  if (!graph) return null;
+  const mapRadius = useMemo(() => {
+    if (!graph) return 42;
+
+    let maxRadius = 0;
+    graph.nodes.forEach((node) => {
+      const pos = layout[node.id];
+      if (!pos) return;
+      const r = Math.hypot(pos[0], pos[1]);
+      maxRadius = Math.max(maxRadius, r);
+    });
+
+    return Math.max(42, maxRadius + 14);
+  }, [graph, layout]);
 
   useFrame(() => {
-    if (!controlsRef.current) return;
+    if (!graph || !controlsRef.current) return;
 
     const controls = controlsRef.current;
     const cameraPos = controls.object.position as THREE.Vector3;
@@ -580,6 +632,8 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
     }
   });
 
+  if (!graph) return null;
+
   const bg = isLightMode ? "#d9efff" : "#070a13";
 
   return (
@@ -603,7 +657,12 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
         />
       )}
 
-      <InteractiveParticles isLightMode={isLightMode} heavy={isHeavyGraph} motionEnergyRef={motionEnergyRef} />
+      <InteractiveParticles
+        isLightMode={isLightMode}
+        heavy={isHeavyGraph}
+        mapRadius={mapRadius}
+        motionEnergyRef={motionEnergyRef}
+      />
 
       {renderedEdges.map((e) => {
         const from = layout[e.source];
@@ -644,6 +703,7 @@ const Scene = ({ quality, isLightMode, isHeavyGraph }: { quality: QualityConfig;
             key={n.id}
             node={n}
             position={pos}
+            importance={importanceMap.get(n.id) ?? classifyNode(n.path)}
             isSelected={isSelected}
             isHovered={isHovered}
             isFocused={isFocused}
@@ -677,25 +737,10 @@ const Hint = () => (
   </div>
 );
 
-const HeatmapLegend = () => (
-  <div className="absolute bottom-4 left-4 z-10 glass rounded-lg border border-border/70 px-3 py-2 text-[11px]">
-    <div className="mb-1 font-semibold uppercase tracking-wider text-muted-foreground">Heatmap</div>
-    <div className="h-2.5 w-44 rounded-full bg-[linear-gradient(90deg,#22c55e_0%,#eab308_55%,#ef4444_100%)]" />
-    <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-      <span>Low</span>
-      <span>High</span>
-    </div>
-    <div className="mt-1 text-[10px] text-muted-foreground">
-      Score = outgoing dependencies
-    </div>
-  </div>
-);
-
 const GraphView = () => {
   const graph = useGraphStore((s) => s.graph);
   const selectNode = useGraphStore((s) => s.selectNode);
   const [ready, setReady] = useState(false);
-  const { resolvedTheme } = useTheme();
 
   useEffect(() => {
     setReady(!!graph);
@@ -710,7 +755,6 @@ const GraphView = () => {
       ...base,
       showStars: false,
       showFog: false,
-      showHalo: false,
       rotateNodes: false,
       dpr: [1, 1],
       edgeOpacityBase: 0.55,
@@ -728,11 +772,11 @@ const GraphView = () => {
           onPointerMissed={() => selectNode(null)}
         >
           <Suspense fallback={null}>
-            <Scene quality={cfg} isLightMode={resolvedTheme === "light"} isHeavyGraph={isHeavyGraph} />
+            <Scene quality={cfg} isLightMode={false} isHeavyGraph={isHeavyGraph} />
           </Suspense>
         </Canvas>
       )}
-      <HeatmapLegend />
+      <FileImportanceLegend />
       <Hint />
     </div>
   );

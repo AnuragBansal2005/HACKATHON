@@ -49,8 +49,12 @@ const toCssLength = (value?: number | string): string | undefined =>
 const useResizeObserver = (
   callback: () => void,
   elements: Array<React.RefObject<Element | null>>,
-  dependencies: React.DependencyList,
+  logos: LogoItem[],
+  gap: number,
+  logoHeight: number,
+  isVertical: boolean,
 ) => {
+  const [firstElement, secondElement] = elements;
   useEffect(() => {
     if (!window.ResizeObserver) {
       const handleResize = () => callback();
@@ -71,13 +75,16 @@ const useResizeObserver = (
     return () => {
       observers.forEach((observer) => observer?.disconnect());
     };
-  }, dependencies);
+  }, [callback, elements, firstElement, secondElement, logos, gap, logoHeight, isVertical]);
 };
 
 const useImageLoader = (
   seqRef: React.RefObject<HTMLUListElement | null>,
   onLoad: () => void,
-  dependencies: React.DependencyList,
+  logos: LogoItem[],
+  gap: number,
+  logoHeight: number,
+  isVertical: boolean,
 ) => {
   useEffect(() => {
     const images = seqRef.current?.querySelectorAll("img") ?? [];
@@ -111,7 +118,7 @@ const useImageLoader = (
         img.removeEventListener("error", handleImageLoad);
       });
     };
-  }, dependencies);
+  }, [seqRef, onLoad, logos, gap, logoHeight, isVertical]);
 };
 
 const useAnimationLoop = (
@@ -188,7 +195,7 @@ const useAnimationLoop = (
       }
       lastTimestampRef.current = null;
     };
-  }, [targetVelocity, seqWidth, seqHeight, isHovered, hoverSpeed, isVertical, enabled]);
+  }, [trackRef, targetVelocity, seqWidth, seqHeight, isHovered, hoverSpeed, isVertical, enabled]);
 };
 
 export const LogoLoop = React.memo<LogoLoopProps>(
@@ -307,9 +314,9 @@ export const LogoLoop = React.memo<LogoLoopProps>(
 
     const shouldAnimate = !reducedMotion && isPageVisible && isInView;
 
-    useResizeObserver(updateDimensions, [containerRef, seqRef], [logos, gap, logoHeight, isVertical]);
+    useResizeObserver(updateDimensions, [containerRef, seqRef], logos, gap, logoHeight, isVertical);
 
-    useImageLoader(seqRef, updateDimensions, [logos, gap, logoHeight, isVertical]);
+    useImageLoader(seqRef, updateDimensions, logos, gap, logoHeight, isVertical);
 
     useAnimationLoop(
       trackRef,

@@ -7,13 +7,6 @@ import { useGraphStore } from "@/store/useGraphStore";
 import { api } from "@/services/api";
 import { toast } from "sonner";
 
-const SUGGESTIONS = [
-  "Where is authentication handled?",
-  "Show payment flow",
-  "Where does the app start?",
-  "How do API calls work?",
-];
-
 const QueryBox = () => {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
@@ -73,22 +66,6 @@ const QueryBox = () => {
           </Button>
         </form>
 
-        {!explanation && !q && (
-          <div className="flex flex-wrap gap-1.5 px-2 pb-1.5 pt-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => {
-                  setQ(s);
-                  submit(s);
-                }}
-                className="rounded-full border border-border/70 bg-secondary/40 px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       <AnimatePresence>

@@ -1,5 +1,14 @@
 import axios from "axios";
-import type { GraphData, FileSummary, OnboardingStep, QueryResult } from "@/types/graph";
+import type {
+  ChatRequest,
+  ChatResult,
+  FileAnalysisRequest,
+  FileAnalysisResult,
+  GraphData,
+  FileSummary,
+  OnboardingStep,
+  QueryResult,
+} from "@/types/graph";
 import {
   buildDummyGraph,
   getDummySummary,
@@ -7,7 +16,7 @@ import {
   dummyQuery,
 } from "./dummyData";
 
-const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:3001";
 const BASE_URL = RAW_BASE_URL
   ? RAW_BASE_URL.replace(/\/$/, "").endsWith("/api")
     ? RAW_BASE_URL.replace(/\/$/, "")
@@ -75,5 +84,33 @@ export const api = {
     }
     await wait(200);
     return dummyOnboarding;
+  },
+
+  async analyzeFile(payload: FileAnalysisRequest): Promise<FileAnalysisResult> {
+    if (isApiConfigured()) {
+      const { data } = await client.post("/file-analysis", payload);
+      return data;
+    }
+    await wait(500);
+    return {
+      markdown: `- **What it does:** ${payload.fileName} appears to be a central file in the repository.
+- **How it works:** It likely coordinates imports, exports, or application startup logic.
+- **Files it connects to:** It likely links to neighboring modules in the same feature area.
+- **Its role in the system:** It is treated as a high-priority file for architecture understanding.`,
+    };
+  },
+
+  async chat(payload: ChatRequest): Promise<ChatResult> {
+    if (isApiConfigured()) {
+      const { data } = await client.post("/chat", payload);
+      return data;
+    }
+    await wait(650);
+    const last = payload.messages[payload.messages.length - 1]?.content ?? "";
+    return {
+      reply: `- **Answer:** I can see graph ${payload.graphId} in demo mode.
+- **You asked:** ${last}
+- **Next step:** connect backend API key for live Claude responses.`,
+    };
   },
 };
