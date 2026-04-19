@@ -16,7 +16,9 @@ import {
   dummyQuery,
 } from "./dummyData";
 
-const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:3001";
+const RAW_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
+  (import.meta.env.DEV ? "http://localhost:3001" : "/api");
 const BASE_URL = RAW_BASE_URL
   ? RAW_BASE_URL.replace(/\/$/, "").endsWith("/api")
     ? RAW_BASE_URL.replace(/\/$/, "")
