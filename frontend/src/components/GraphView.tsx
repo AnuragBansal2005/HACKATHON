@@ -6,6 +6,7 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useGraphStore } from "@/store/useGraphStore";
 import type { RepoNode, RepoEdge } from "@/types/graph";
 import { classifyNode, type ImportanceInfo } from "@/utils/fileImportance";
+import { classifyAstroNode, createAstroMaterial } from "@/utils/astronomicalNodes";
 import { FileImportanceLegend } from "@/components/FileImportancePanels";
 
 type Vec3 = [number, number, number];
